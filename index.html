@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NovaRide</title>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.css" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="auth-screen" id="authScreen">
+        <div class="intro-road" aria-hidden="true">
+          <div class="road-line"></div>
+          <div class="hero-cab">
+            <span class="cab-light"></span>
+            <span class="cab-body"></span>
+            <span class="cab-wheel left"></span>
+            <span class="cab-wheel right"></span>
+          </div>
+          <div class="hero-cab second-cab">
+            <span class="cab-light"></span>
+            <span class="cab-body"></span>
+            <span class="cab-wheel left"></span>
+            <span class="cab-wheel right"></span>
+          </div>
+        </div>
+        <div class="brand-panel">
+          <div class="brand-lockup">
+            <div class="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 72 72" role="img">
+                <path class="logo-road" d="M36 9 55 61H42l-6-21-6 21H17L36 9Z" />
+                <path class="logo-lane" d="M36 22v9m0 8v9" />
+                <path class="logo-spark" d="M51 17h10M56 12v10" />
+              </svg>
+            </div>
+            <div>
+              <span class="brand-name">NovaRide</span>
+              <span class="brand-tag">Taxi of Odessa</span>
+            </div>
+          </div>
+          <p class="eyebrow">Одесса, Украина</p>
+          <h1>Такси будущего для ночного города</h1>
+          <p class="brand-copy">
+            Быстрый заказ, честные детали поездки и комфорт для клиента и водителя.
+          </p>
+          <div class="brand-stats" aria-label="Преимущества сервиса">
+            <span>4 класса авто</span>
+            <span>точные детали</span>
+            <span>торг с водителем</span>
+          </div>
+        </div>
+
+        <form class="auth-card" id="authForm">
+          <div class="auth-heading">
+            <span class="auth-kicker" id="authKicker">Создать аккаунт</span>
+            <h2 id="authTitle">Добро пожаловать в NovaRide</h2>
+            <p id="authSubtitle">Выберите: зарегистрироваться или войти в уже существующий профиль.</p>
+          </div>
+
+          <div class="auth-progress" aria-label="Прогресс входа">
+            <span class="progress-dot is-active" data-step-dot="start"></span>
+            <span class="progress-dot" data-step-dot="code"></span>
+            <span class="progress-dot" data-step-dot="profile"></span>
+          </div>
+
+          <div class="auth-step" data-auth-step="start">
+            <div class="mode-switch" aria-label="Вход или регистрация">
+              <button class="mode-button is-active" type="button" data-auth-flow="register">Зарегистрироваться</button>
+              <button class="mode-button" type="button" data-auth-flow="login">Войти</button>
+            </div>
+
+            <div class="auth-tabs" role="tablist" aria-label="Способ регистрации">
+              <button class="auth-tab is-active" type="button" data-auth="phone">
+                <span class="auth-icon phone-icon" aria-hidden="true"></span>
+                <span>Телефон</span>
+              </button>
+              <button class="auth-tab" type="button" data-auth="email">
+                <span class="auth-icon email-icon" aria-hidden="true"></span>
+                <span>Email</span>
+              </button>
+            </div>
+
+            <div class="social-auth-box is-hidden" id="socialAuthBox"></div>
+
+            <label class="field phone-field">
+              <span>Номер телефона</span>
+              <input type="tel" id="phoneInput" value="+380 " autocomplete="tel" />
+            </label>
+
+            <label class="field email-field is-hidden">
+              <span>Email</span>
+              <input type="email" id="emailInput" placeholder="name@example.com" autocomplete="email" />
+            </label>
+
+            <button class="primary-action" type="button" id="sendCodeBtn">Отправить код</button>
+            <p class="account-warning is-hidden" id="startAccountWarning">Аккаунт уже зарегистрирован. Попробуйте войти в него.</p>
+          </div>
+
+          <div class="auth-step is-hidden" data-auth-step="code">
+            <div class="step-card">
+              <strong>Подтвердите код</strong>
+              <span id="codeDestination">Мы отправили код подтверждения.</span>
+            </div>
+            <label class="field">
+              <span>Код подтверждения</span>
+              <input type="text" id="codeInput" inputmode="numeric" maxlength="6" placeholder="123456" />
+            </label>
+            <p class="hint" id="codeHint">Тестовый код для прототипа: 123456</p>
+            <p class="form-error is-hidden" id="codeError">Код неверный. Введите 123456.</p>
+            <p class="account-warning is-hidden" id="accountExistsWarning">Аккаунт уже зарегистрирован. Попробуйте войти в него.</p>
+            <div class="action-row">
+              <button class="ghost-action" type="button" id="backToStartBtn">Назад</button>
+              <button class="primary-action" type="button" id="verifyCodeBtn">Проверить код</button>
+            </div>
+          </div>
+
+          <div class="auth-step profile-step is-hidden" data-auth-step="profile" id="profileStep">
+            <div class="field-grid">
+              <label class="field">
+                <span>Имя</span>
+                <input type="text" id="nameInput" value="Алексей" autocomplete="given-name" />
+              </label>
+              <label class="field">
+                <span>Дата рождения</span>
+                <input type="date" id="birthInput" value="1998-05-12" />
+              </label>
+            </div>
+
+            <div class="photo-picker">
+              <span>Фото профиля</span>
+              <div class="photo-actions">
+                <label class="photo-button">
+                  <span class="camera-symbol" aria-hidden="true"></span>
+                  Сфотографироваться
+                  <input type="file" accept="image/*" capture="user" />
+                </label>
+                <label class="photo-button">
+                  <span class="file-symbol" aria-hidden="true"></span>
+                  Выбрать файл
+                  <input type="file" accept="image/*" />
+                </label>
+              </div>
+            </div>
+
+            <div class="segmented" aria-label="Пол">
+              <button class="segment is-active" type="button" data-gender="male">Мужчина</button>
+              <button class="segment" type="button" data-gender="female">Женщина</button>
+            </div>
+            <button class="primary-action" type="submit" id="finishAuthBtn">Войти в приложение</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="taxi-screen is-hidden" id="taxiScreen">
+        <aside class="side-menu" id="sideMenu" aria-label="Меню приложения">
+          <div class="profile-card">
+            <div class="avatar" id="profileAvatar">M</div>
+            <div>
+              <strong id="profileName">Алексей</strong>
+              <span>Рейтинг 4.92</span>
+            </div>
+          </div>
+
+          <nav class="menu-list">
+            <button class="menu-item is-active" data-section="ride">Поездка</button>
+            <button class="menu-item" data-section="history">История заказов</button>
+            <button class="menu-item" data-section="addresses">Мои адреса</button>
+            <button class="menu-item" data-section="notifications">Уведомления</button>
+            <button class="menu-item" data-section="safety">Безопасность</button>
+            <button class="menu-item" data-section="settings">Настройки</button>
+            <button class="menu-item" data-section="help">Помощь</button>
+          </nav>
+
+          <button class="driver-cta" id="driverModeBtn">Стать водителем</button>
+        </aside>
+
+        <div class="workspace">
+          <header class="topbar">
+            <button class="icon-button" id="menuToggle" aria-label="Открыть меню">
+              <span></span><span></span><span></span>
+            </button>
+            <div>
+              <p>NovaRide</p>
+              <strong id="screenTitle">Поездка</strong>
+            </div>
+            <button class="icon-button round" id="themeQuickBtn" aria-label="Переключить тему">A</button>
+          </header>
+
+          <section class="content-grid">
+            <div class="map-panel">
+              <div class="map-canvas" id="mapCanvas" aria-label="Карта Одессы">
+                <div id="realMap" class="real-map" aria-hidden="true"></div>
+                <div class="sea-zone" aria-hidden="true"></div>
+                <span class="district old-town">Центр</span>
+                <span class="district arcadia-zone">Аркадия</span>
+                <span class="district tairova-zone">Таирова</span>
+                <span class="district port-zone">Морской порт</span>
+                <span class="street main">Преображенская</span>
+                <span class="street sea">Французский бульвар</span>
+                <span class="street port">Порт</span>
+                <span class="street center">Дерибасовская</span>
+                <span class="street rail">Вокзал</span>
+                <button class="map-pin pin-a" data-point="a">A</button>
+                <button class="map-pin pin-b" data-point="b">B</button>
+                <button class="car car-one" aria-label="Водитель рядом"></button>
+                <button class="car car-two" aria-label="Водитель рядом"></button>
+                <button class="car car-three" aria-label="Водитель рядом"></button>
+                <div class="route-line"></div>
+                <div class="map-hud">
+                  <strong>Odessa live map</strong>
+                  <span>12 водителей рядом</span>
+                </div>
+                <div class="map-class-strip" id="classGrid">
+                  <button class="class-panel-handle" id="classPanelHandle" type="button" aria-label="Скрыть классы"></button>
+                  <button class="class-card is-selected" data-price="150" data-class-name="Эконом">
+                    <span class="vehicle-icon standard-car" aria-hidden="true"><i></i></span>
+                    <strong>Эконом</strong>
+                    <em>150</em>
+                  </button>
+                  <button class="class-card" data-price="210" data-class-name="Комфорт">
+                    <span class="vehicle-icon comfort-car" aria-hidden="true"><i></i></span>
+                    <strong>Комфорт</strong>
+                    <em>210</em>
+                  </button>
+                  <button class="class-card" data-price="320" data-class-name="Бизнес">
+                    <span class="vehicle-icon business-car" aria-hidden="true"><i></i></span>
+                    <strong>Бизнес</strong>
+                    <em>320</em>
+                  </button>
+                  <button class="class-card" data-price="430" data-class-name="Plus">
+                    <span class="vehicle-icon plus-car" aria-hidden="true"><i></i></span>
+                    <strong>Plus</strong>
+                    <em>430</em>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <section class="panel ride-panel active-panel" id="ridePanel">
+              <div class="ride-card route-card">
+                <div class="route-point">
+                  <span>A</span>
+                  <div class="address-field">
+                    <input id="fromInput" value="Одесса, Дерибасовская 1" aria-label="Точка A" list="odessaAddressHints" autocomplete="off" />
+                    <div class="address-suggestions" data-suggestions="a"></div>
+                  </div>
+                </div>
+                <div id="stopsList"></div>
+                <button class="mini-action" id="addStopBtn" type="button">+ остановка</button>
+                <div class="route-point destination">
+                  <span>B</span>
+                  <div class="address-field">
+                    <input id="toInput" value="Аркадия, Гагаринское плато" aria-label="Точка B" list="odessaAddressHints" autocomplete="off" />
+                    <div class="address-suggestions" data-suggestions="b"></div>
+                  </div>
+                </div>
+              </div>
+              <datalist id="odessaAddressHints">
+                <option value="Дерибасовская 1"></option>
+                <option value="Аркадия"></option>
+                <option value="Парк Шевченко"></option>
+                <option value="ЖД вокзал Одесса"></option>
+                <option value="Привоз"></option>
+                <option value="Оперный театр"></option>
+                <option value="Морской вокзал"></option>
+                <option value="Таирова"></option>
+                <option value="Французский бульвар"></option>
+                <option value="Gagarinn Plaza"></option>
+              </datalist>
+
+              <div class="ride-card comment-card">
+                <label>
+                  <span>Комментарий водителю</span>
+                  <textarea id="rideComment" placeholder="Например: буду с чемоданом, подъезд со двора"></textarea>
+                </label>
+              </div>
+
+              <div class="price-glass">
+                <span>Класс выбран</span>
+                <strong id="priceLabel">150 грн</strong>
+                <em id="distanceLabel">~10 км</em>
+              </div>
+
+              <button class="primary-action order-button" id="orderBtn">Найти водителя</button>
+            </section>
+
+            <section class="panel info-panel" id="infoPanel"></section>
+
+            <section class="panel driver-panel is-hidden" id="driverPanel">
+              <div class="driver-tabs">
+                <button class="driver-tab is-active" data-driver-tab="feed">Лента заказов</button>
+                <button class="driver-tab" data-driver-tab="stats">Статистика</button>
+                <button class="driver-tab" data-driver-tab="wallet">Кошелек</button>
+              </div>
+              <div class="driver-content" id="driverContent"></div>
+            </section>
+          </section>
+          <div class="ride-companion" aria-hidden="true">
+            <div class="companion-bubble">Поехали со мной</div>
+            <div class="companion-person">
+              <span class="cap"></span>
+              <span class="head"></span>
+              <span class="body"></span>
+              <span class="arm"></span>
+            </div>
+            <div class="companion-cab">
+              <span></span>
+            </div>
+          </div>
+          <div class="screen-transition is-hidden" id="screenTransition" aria-hidden="true">
+            <div class="transition-cab"><span></span></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
