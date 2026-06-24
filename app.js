@@ -267,6 +267,24 @@ function clearPendingAuth() {
   sessionStorage.removeItem(PENDING_AUTH_KEY);
 }
 
+function restorePendingAuthToken() {
+  if (state.authSessionToken) return state.authSessionToken;
+
+  try {
+    const pending = JSON.parse(sessionStorage.getItem(PENDING_AUTH_KEY) || "null");
+    if (!pending?.token || !pending?.destination) return "";
+
+    state.authSessionToken = pending.token;
+    state.authDestination = pending.destination;
+    state.authMode = pending.mode === "email" ? "email" : "phone";
+    state.authFlow = pending.flow === "login" ? "login" : "register";
+    return state.authSessionToken;
+  } catch {
+    clearPendingAuth();
+    return "";
+  }
+}
+
 function restorePendingAuth() {
   try {
     const pending = JSON.parse(sessionStorage.getItem(PENDING_AUTH_KEY) || "null");
@@ -642,7 +660,9 @@ async function finishAuth(event) {
     return;
   }
 
-  if (!state.authSessionToken) {
+  const sessionToken = restorePendingAuthToken();
+
+  if (!sessionToken) {
     alert("Сначала подтвердите телефон или email кодом.");
     setAuthStep("start");
     return;
@@ -655,7 +675,7 @@ async function finishAuth(event) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        sessionToken: state.authSessionToken,
+        sessionToken,
         channel: state.authMode === "phone" ? "sms" : "email",
         name,
         birthDate,
