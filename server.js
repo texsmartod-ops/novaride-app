@@ -15,6 +15,13 @@ const MAX_ATTEMPTS = 5;
 const codes = new Map();
 const sessions = new Map();
 const verifiedDestinations = new Map();
+let postgresPool = null;
+let postgresReady = null;
+
+const defaultSavedAddresses = [
+  { icon: "home", title: "Дом", address: "Одесса, Дерибасовская 1" },
+  { icon: "work", title: "Работа", address: "Одесса, Екатерининская 18" },
+];
 
 const turboSmsErrors = {
   200: "Не указан отправитель SMS.",
@@ -88,6 +95,66 @@ function readUsers() {
 function writeUsers(users) {
   ensureDatabase();
   fs.writeFileSync(USERS_FILE, JSON.stringify({ users }, null, 2));
+}
+
+function hasPostgresConfig() {
+  return Boolean(process.env.DATABASE_URL);
+}
+
+function getPostgresPool() {
+  if (!hasPostgresConfig()) return null;
+
+  if (!postgresPool) {
+    const { Pool } = require("pg");
+    postgresPool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+    });
+  }
+
+  return postgresPool;
+}
+
+async function ensurePostgres() {
+  const pool = getPostgresPool();
+  if (!pool) return null;
+
+  if (!postgresReady) {
+    postgresReady = pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        destination TEXT UNIQUE NOT NULL,
+        channel TEXT NOT NULL,
+        name TEXT NOT NULL,
+        birth_date TEXT DEFAULT '',
+        gender TEXT NOT NULL,
+        rating NUMERIC DEFAULT 4.92,
+        saved_addresses JSONB DEFAULT '[]'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+  }
+
+  await postgresReady;
+  return pool;
+}
+
+function userFromRow(row) {
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    destination: row.destination,
+    channel: row.channel,
+    name: row.name,
+    birthDate: row.birth_date || "",
+    gender: row.gender,
+    rating: Number(row.rating || 4.92),
+    savedAddresses: Array.isArray(row.saved_addresses) ? row.saved_addresses : [],
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+  };
 }
 
 function readStoredCodes() {
@@ -186,7 +253,13 @@ function createId() {
   return crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex");
 }
 
-function findUserByDestination(destination) {
+async function findUserByDestination(destination) {
+  const pool = await ensurePostgres();
+  if (pool) {
+    const result = await pool.query("SELECT * FROM users WHERE destination = $1 LIMIT 1", [destination]);
+    return userFromRow(result.rows[0]);
+  }
+
   return readUsers().find((user) => user.destination === destination);
 }
 
@@ -285,7 +358,7 @@ async function verifyAppleToken(idToken) {
   };
 }
 
-function upsertSocialUser(profile) {
+async function upsertSocialUser(profile) {
   const destination = `${profile.provider}:${profile.providerId || profile.email}`;
   return upsertUser({
     destination,
@@ -325,11 +398,10 @@ function consumeVerifiedDestination(destination) {
   return true;
 }
 
-function upsertUser({ destination, channel, name, birthDate, gender }) {
-  const users = readUsers();
-  const index = users.findIndex((user) => user.destination === destination);
+async function upsertUser({ destination, channel, name, birthDate, gender }) {
+  const pool = await ensurePostgres();
+  const current = await findUserByDestination(destination);
   const now = new Date().toISOString();
-  const current = index >= 0 ? users[index] : null;
   const user = {
     id: current?.id || createId(),
     destination,
@@ -338,13 +410,46 @@ function upsertUser({ destination, channel, name, birthDate, gender }) {
     birthDate: String(birthDate || current?.birthDate || "").trim(),
     gender: gender === "female" ? "female" : "male",
     rating: current?.rating || 4.92,
-    savedAddresses: current?.savedAddresses || [
-      { icon: "home", title: "Дом", address: "Одесса, Дерибасовская 1" },
-      { icon: "work", title: "Работа", address: "Одесса, Екатерининская 18" },
-    ],
+    savedAddresses: current?.savedAddresses?.length ? current.savedAddresses : defaultSavedAddresses,
     createdAt: current?.createdAt || now,
     updatedAt: now,
   };
+
+  if (pool) {
+    const result = await pool.query(
+      `
+        INSERT INTO users (
+          id, destination, channel, name, birth_date, gender, rating, saved_addresses, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
+        ON CONFLICT (destination) DO UPDATE SET
+          channel = EXCLUDED.channel,
+          name = EXCLUDED.name,
+          birth_date = EXCLUDED.birth_date,
+          gender = EXCLUDED.gender,
+          rating = EXCLUDED.rating,
+          saved_addresses = COALESCE(users.saved_addresses, EXCLUDED.saved_addresses),
+          updated_at = EXCLUDED.updated_at
+        RETURNING *
+      `,
+      [
+        user.id,
+        user.destination,
+        user.channel,
+        user.name,
+        user.birthDate,
+        user.gender,
+        user.rating,
+        JSON.stringify(user.savedAddresses),
+        user.createdAt,
+        user.updatedAt,
+      ],
+    );
+    return userFromRow(result.rows[0]);
+  }
+
+  const users = readUsers();
+  const index = users.findIndex((user) => user.destination === destination);
 
   if (index >= 0) {
     users[index] = user;
@@ -354,6 +459,29 @@ function upsertUser({ destination, channel, name, birthDate, gender }) {
 
   writeUsers(users);
   return user;
+}
+
+async function saveUserAddresses(destination, savedAddresses) {
+  const pool = await ensurePostgres();
+  const addresses = Array.isArray(savedAddresses) ? savedAddresses.slice(0, 20) : [];
+  const updatedAt = new Date().toISOString();
+
+  if (pool) {
+    const result = await pool.query(
+      "UPDATE users SET saved_addresses = $1::jsonb, updated_at = $2 WHERE destination = $3 RETURNING *",
+      [JSON.stringify(addresses), updatedAt, destination],
+    );
+    return userFromRow(result.rows[0]);
+  }
+
+  const users = readUsers();
+  const index = users.findIndex((user) => user.destination === destination);
+  if (index < 0) return null;
+
+  users[index].savedAddresses = addresses;
+  users[index].updatedAt = updatedAt;
+  writeUsers(users);
+  return users[index];
 }
 
 async function deliverCode({ channel, destination, code }) {
@@ -583,7 +711,7 @@ async function handleSendCode(req, res) {
       return;
     }
 
-    if (body.flow === "register" && findUserByDestination(destination)) {
+    if (body.flow === "register" && (await findUserByDestination(destination))) {
       sendJson(res, 409, {
         ok: false,
         code: "ACCOUNT_EXISTS",
@@ -649,7 +777,7 @@ async function handleVerifyCode(req, res) {
     deleteAuthCode(destination);
     markDestinationVerified(destination);
     const sessionToken = createSession(destination);
-    const user = findUserByDestination(destination);
+    const user = await findUserByDestination(destination);
 
     sendJson(res, 200, {
       ok: true,
@@ -675,6 +803,7 @@ function handleHealth(req, res) {
   sendJson(res, 200, {
     ok: true,
     environment: process.env.NODE_ENV || "development",
+    databaseConfigured: hasPostgresConfig(),
     smsConfigured: hasTwilioConfig() || hasTurboSmsConfig() || Boolean(process.env.SMS_WEBHOOK_URL),
     turboSmsConfigured: hasTurboSmsConfig(),
     emailConfigured: hasResendConfig() || Boolean(process.env.EMAIL_WEBHOOK_URL),
@@ -683,19 +812,23 @@ function handleHealth(req, res) {
   });
 }
 
-function handleAuthCheck(req, res) {
-  const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
-  const destination = normalizeDestination(url.searchParams.get("destination"));
+async function handleAuthCheck(req, res) {
+  try {
+    const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
+    const destination = normalizeDestination(url.searchParams.get("destination"));
 
-  if (!destination) {
-    sendJson(res, 200, { ok: true, exists: false });
-    return;
+    if (!destination) {
+      sendJson(res, 200, { ok: true, exists: false });
+      return;
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      exists: Boolean(await findUserByDestination(destination)),
+    });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось проверить аккаунт." });
   }
-
-  sendJson(res, 200, {
-    ok: true,
-    exists: Boolean(findUserByDestination(destination)),
-  });
 }
 
 async function handleSocialAuth(req, res) {
@@ -710,7 +843,7 @@ async function handleSocialAuth(req, res) {
     }
 
     const profile = provider === "apple" ? await verifyAppleToken(credential) : await verifyGoogleToken(credential);
-    const user = upsertSocialUser({
+    const user = await upsertSocialUser({
       ...profile,
       name: body.name || profile.name,
     });
@@ -738,7 +871,7 @@ async function handleCompleteProfile(req, res) {
       return;
     }
 
-    const user = upsertUser({
+    const user = await upsertUser({
       destination,
       channel: body.channel === "email" ? "email" : "sms",
       name: body.name,
@@ -762,19 +895,14 @@ async function handleSaveAddresses(req, res) {
       return;
     }
 
-    const users = readUsers();
-    const index = users.findIndex((user) => user.destination === session.destination);
+    const user = await saveUserAddresses(session.destination, body.savedAddresses);
 
-    if (index < 0) {
+    if (!user) {
       sendJson(res, 404, { ok: false, error: "Профиль не найден." });
       return;
     }
 
-    users[index].savedAddresses = Array.isArray(body.savedAddresses) ? body.savedAddresses.slice(0, 20) : [];
-    users[index].updatedAt = new Date().toISOString();
-    writeUsers(users);
-
-    sendJson(res, 200, { ok: true, user: publicUser(users[index]) });
+    sendJson(res, 200, { ok: true, user: publicUser(user) });
   } catch (error) {
     sendJson(res, 500, { ok: false, error: error.message || "Не удалось сохранить адреса." });
   }
