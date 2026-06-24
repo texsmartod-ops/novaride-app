@@ -484,6 +484,20 @@ async function saveUserAddresses(destination, savedAddresses) {
   return users[index];
 }
 
+async function deleteUserByDestination(destination) {
+  const pool = await ensurePostgres();
+
+  if (pool) {
+    const result = await pool.query("DELETE FROM users WHERE destination = $1", [destination]);
+    return result.rowCount > 0;
+  }
+
+  const users = readUsers();
+  const nextUsers = users.filter((user) => user.destination !== destination);
+  writeUsers(nextUsers);
+  return nextUsers.length !== users.length;
+}
+
 async function listUsers() {
   const pool = await ensurePostgres();
 
@@ -1116,6 +1130,24 @@ async function handleSaveAddresses(req, res) {
   }
 }
 
+async function handleDeleteAccount(req, res) {
+  try {
+    const body = await readJson(req);
+    const session = getSession(body.sessionToken);
+
+    if (!session) {
+      sendJson(res, 401, { ok: false, error: "Сессия истекла. Войдите снова." });
+      return;
+    }
+
+    const deleted = await deleteUserByDestination(session.destination);
+    sessions.delete(body.sessionToken);
+    sendJson(res, 200, { ok: true, deleted });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось удалить аккаунт." });
+  }
+}
+
 function serveStatic(req, res) {
   const urlPath = req.url === "/" ? "/index.html" : decodeURIComponent(req.url.split("?")[0]);
   if (urlPath === "/favicon.ico") {
@@ -1195,6 +1227,11 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "POST" && req.url === "/api/users/addresses") {
     handleSaveAddresses(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/users/delete") {
+    handleDeleteAccount(req, res);
     return;
   }
 

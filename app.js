@@ -1081,9 +1081,35 @@ async function persistSavedAddresses() {
   }
 }
 
-function leaveAccount(kind) {
+async function leaveAccount(kind) {
+  if (kind === "delete") {
+    if (!state.authSessionToken) {
+      alert("Сессия истекла. Войдите снова, чтобы удалить аккаунт.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/users/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionToken: state.authSessionToken }),
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Не удалось удалить аккаунт.");
+      }
+    } catch (error) {
+      alert(error.message);
+      return;
+    }
+  }
+
   playScreenTransition(() => {
     clearPendingAuth();
+    state.authSessionToken = "";
+    state.authDestination = "";
+    state.currentUser = null;
     state.driverMode = false;
     $("#taxiScreen").classList.add("is-hidden");
     $("#authScreen").classList.remove("is-hidden");
@@ -1091,7 +1117,7 @@ function leaveAccount(kind) {
     const box = $("#sectionActionBox");
     if (box) box.innerHTML = "";
     $("#authTitle").textContent = kind === "delete" ? "Аккаунт удален" : "Вы вышли из аккаунта";
-    $("#authSubtitle").textContent = "Можно войти снова по телефону, email, Google или Apple.";
+    $("#authSubtitle").textContent = kind === "delete" ? "Профиль удален из базы NovaRide." : "Можно войти снова по телефону или email.";
   });
 }
 
