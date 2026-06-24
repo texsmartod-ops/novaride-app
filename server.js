@@ -9,6 +9,7 @@ const PORT = Number(process.env.PORT || 4174);
 const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, "data");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
+const CODES_FILE = path.join(DATA_DIR, "auth-codes.json");
 const CODE_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
 const codes = new Map();
@@ -87,6 +88,52 @@ function readUsers() {
 function writeUsers(users) {
   ensureDatabase();
   fs.writeFileSync(USERS_FILE, JSON.stringify({ users }, null, 2));
+}
+
+function readStoredCodes() {
+  ensureDatabase();
+  try {
+    const data = JSON.parse(fs.readFileSync(CODES_FILE, "utf8"));
+    return data && typeof data.codes === "object" ? data.codes : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredCodes(storedCodes) {
+  ensureDatabase();
+  fs.writeFileSync(CODES_FILE, JSON.stringify({ codes: storedCodes }, null, 2));
+}
+
+function saveAuthCode(destination, payload) {
+  codes.set(destination, payload);
+  const storedCodes = readStoredCodes();
+  storedCodes[destination] = payload;
+  writeStoredCodes(storedCodes);
+}
+
+function getAuthCode(destination) {
+  const inMemory = codes.get(destination);
+  if (inMemory) return inMemory;
+
+  const storedCodes = readStoredCodes();
+  const stored = storedCodes[destination];
+  if (stored) {
+    codes.set(destination, stored);
+  }
+
+  return stored || null;
+}
+
+function updateAuthCode(destination, payload) {
+  saveAuthCode(destination, payload);
+}
+
+function deleteAuthCode(destination) {
+  codes.delete(destination);
+  const storedCodes = readStoredCodes();
+  delete storedCodes[destination];
+  writeStoredCodes(storedCodes);
 }
 
 function readJson(req) {
@@ -546,7 +593,7 @@ async function handleSendCode(req, res) {
     }
 
     const code = createCode();
-    codes.set(destination, {
+    saveAuthCode(destination, {
       codeHash: crypto.createHash("sha256").update(code).digest("hex"),
       channel,
       attempts: 0,
@@ -571,7 +618,7 @@ async function handleVerifyCode(req, res) {
     const body = await readJson(req);
     const destination = normalizeDestination(body.destination);
     const code = String(body.code || "").trim();
-    const saved = codes.get(destination);
+    const saved = getAuthCode(destination);
 
     if (!saved) {
       sendJson(res, 400, { ok: false, error: "Сначала отправьте код." });
@@ -579,18 +626,19 @@ async function handleVerifyCode(req, res) {
     }
 
     if (Date.now() > saved.expiresAt) {
-      codes.delete(destination);
+      deleteAuthCode(destination);
       sendJson(res, 400, { ok: false, error: "Код истек. Отправьте новый код." });
       return;
     }
 
     if (saved.attempts >= MAX_ATTEMPTS) {
-      codes.delete(destination);
+      deleteAuthCode(destination);
       sendJson(res, 429, { ok: false, error: "Слишком много попыток. Отправьте новый код." });
       return;
     }
 
     saved.attempts += 1;
+    updateAuthCode(destination, saved);
     const incomingHash = crypto.createHash("sha256").update(code).digest("hex");
 
     if (incomingHash !== saved.codeHash) {
@@ -598,7 +646,7 @@ async function handleVerifyCode(req, res) {
       return;
     }
 
-    codes.delete(destination);
+    deleteAuthCode(destination);
     markDestinationVerified(destination);
     const sessionToken = createSession(destination);
     const user = findUserByDestination(destination);
