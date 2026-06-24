@@ -667,6 +667,12 @@ async function handleSaveAddresses(req, res) {
 
 function serveStatic(req, res) {
   const urlPath = req.url === "/" ? "/index.html" : decodeURIComponent(req.url.split("?")[0]);
+  if (urlPath === "/favicon.ico") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   const filePath = path.normalize(path.join(ROOT, urlPath));
 
   if (!filePath.startsWith(ROOT)) {
