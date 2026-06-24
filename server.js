@@ -332,6 +332,14 @@ async function deliverCode({ channel, destination, code }) {
     return "sms-webhook";
   }
 
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      channel === "email"
+        ? "Email не настроен на сервере. Добавьте RESEND_API_KEY и EMAIL_FROM в Render Environment."
+        : "SMS не настроено на сервере. Добавьте TURBOSMS_TOKEN и TURBOSMS_SENDER в Render Environment.",
+    );
+  }
+
   console.log(`[NovaRide dev code] ${destination}: ${code}`);
   return "console";
 }
@@ -570,6 +578,18 @@ function handleAuthConfig(req, res) {
   });
 }
 
+function handleHealth(req, res) {
+  sendJson(res, 200, {
+    ok: true,
+    environment: process.env.NODE_ENV || "development",
+    smsConfigured: hasTwilioConfig() || hasTurboSmsConfig() || Boolean(process.env.SMS_WEBHOOK_URL),
+    turboSmsConfigured: hasTurboSmsConfig(),
+    emailConfigured: hasResendConfig() || Boolean(process.env.EMAIL_WEBHOOK_URL),
+    resendConfigured: hasResendConfig(),
+    mapboxConfigured: Boolean(process.env.MAPBOX_TOKEN),
+  });
+}
+
 function handleAuthCheck(req, res) {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
   const destination = normalizeDestination(url.searchParams.get("destination"));
@@ -696,6 +716,11 @@ function serveStatic(req, res) {
 const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url === "/api/auth/config") {
     handleAuthConfig(req, res);
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/health") {
+    handleHealth(req, res);
     return;
   }
 
