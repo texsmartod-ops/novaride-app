@@ -26,6 +26,7 @@ const state = {
 
 const PRICE_PER_KM = 15;
 const PENDING_AUTH_KEY = "novaride_pending_auth";
+const VERIFIED_AUTH_KEY = "novaride_verified_auth";
 
 let MAPBOX_TOKEN = "";
 const ODESSA_CENTER = [30.7233, 46.4825];
@@ -252,26 +253,27 @@ function setAuthMode(mode) {
 function savePendingAuth() {
   if (!state.authSessionToken || !state.authDestination) return;
 
-  sessionStorage.setItem(
-    PENDING_AUTH_KEY,
-    JSON.stringify({
-      token: state.authSessionToken,
-      destination: state.authDestination,
-      mode: state.authMode,
-      flow: state.authFlow,
-    }),
-  );
+  const payload = JSON.stringify({
+    token: state.authSessionToken,
+    destination: state.authDestination,
+    mode: state.authMode,
+    flow: state.authFlow,
+  });
+
+  sessionStorage.setItem(PENDING_AUTH_KEY, payload);
+  localStorage.setItem(VERIFIED_AUTH_KEY, payload);
 }
 
 function clearPendingAuth() {
   sessionStorage.removeItem(PENDING_AUTH_KEY);
+  localStorage.removeItem(VERIFIED_AUTH_KEY);
 }
 
 function restorePendingAuthToken() {
   if (state.authSessionToken) return state.authSessionToken;
 
   try {
-    const pending = JSON.parse(sessionStorage.getItem(PENDING_AUTH_KEY) || "null");
+    const pending = JSON.parse(sessionStorage.getItem(PENDING_AUTH_KEY) || localStorage.getItem(VERIFIED_AUTH_KEY) || "null");
     if (!pending?.token || !pending?.destination) return "";
 
     state.authSessionToken = pending.token;
@@ -287,7 +289,7 @@ function restorePendingAuthToken() {
 
 function restorePendingAuth() {
   try {
-    const pending = JSON.parse(sessionStorage.getItem(PENDING_AUTH_KEY) || "null");
+    const pending = JSON.parse(sessionStorage.getItem(PENDING_AUTH_KEY) || localStorage.getItem(VERIFIED_AUTH_KEY) || "null");
     if (!pending?.token || !pending?.destination) return;
 
     state.authSessionToken = pending.token;
@@ -574,6 +576,12 @@ async function verifyCode() {
     $("#codeError").classList.add("is-hidden");
     $("#accountExistsWarning").classList.add("is-hidden");
     state.authSessionToken = data.sessionToken || "";
+
+    if (!state.authSessionToken) {
+      $("#codeError").textContent = "Код подтвержден, но сервер не вернул сессию. Обновите страницу и попробуйте еще раз.";
+      $("#codeError").classList.remove("is-hidden");
+      return;
+    }
 
     if (state.authFlow === "login" && data.user) {
       clearPendingAuth();
