@@ -484,6 +484,20 @@ async function saveUserAddresses(destination, savedAddresses) {
   return users[index];
 }
 
+async function listUsers() {
+  const pool = await ensurePostgres();
+
+  if (pool) {
+    const result = await pool.query("SELECT * FROM users ORDER BY created_at DESC LIMIT 500");
+    return result.rows.map(userFromRow);
+  }
+
+  return readUsers()
+    .slice()
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .slice(0, 500);
+}
+
 async function deliverCode({ channel, destination, code }) {
   if (channel === "email" && hasResendConfig()) {
     await sendResendEmail(destination, code);
@@ -812,6 +826,200 @@ function handleHealth(req, res) {
   });
 }
 
+function getAdminPassword() {
+  return String(process.env.ADMIN_PASSWORD || "").trim();
+}
+
+function sendAdminPage(res) {
+  res.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+  });
+  res.end(`<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NovaRide Admin</title>
+    <style>
+      :root { color-scheme: light dark; --blue: #0d4cff; --ink: #07172f; --muted: #64748b; --line: #d9e2f1; --bg: #f5f8fc; --card: #ffffff; }
+      body { margin: 0; font-family: Inter, Arial, sans-serif; background: var(--bg); color: var(--ink); }
+      .shell { max-width: 1180px; margin: 0 auto; padding: 28px 18px 48px; }
+      header { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 22px; }
+      h1 { margin: 0; font-size: clamp(28px, 4vw, 44px); letter-spacing: 0; }
+      .badge { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 10px 14px; color: var(--muted); font-weight: 700; }
+      .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; box-shadow: 0 16px 44px rgba(20, 43, 86, .08); }
+      .login { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-bottom: 18px; }
+      input, button { font: inherit; border-radius: 8px; }
+      input { border: 1px solid var(--line); padding: 13px 14px; min-width: 0; }
+      button { border: 0; background: var(--blue); color: white; font-weight: 800; padding: 13px 18px; cursor: pointer; }
+      button.secondary { background: #10213f; }
+      .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 16px 0; flex-wrap: wrap; }
+      .status { color: var(--muted); font-weight: 700; }
+      table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+      th, td { text-align: left; border-bottom: 1px solid var(--line); padding: 12px 10px; vertical-align: top; font-size: 14px; }
+      th { color: var(--muted); background: #f0f5fc; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+      tr:last-child td { border-bottom: 0; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-word; }
+      .addresses { display: grid; gap: 4px; color: var(--muted); }
+      .empty { padding: 26px; color: var(--muted); text-align: center; }
+      .error { color: #b91c1c; font-weight: 800; }
+      @media (max-width: 760px) {
+        header, .login { grid-template-columns: 1fr; display: grid; align-items: stretch; }
+        table, thead, tbody, th, td, tr { display: block; }
+        thead { display: none; }
+        tr { border-bottom: 1px solid var(--line); padding: 10px; }
+        td { border: 0; padding: 7px 0; }
+        td::before { content: attr(data-label); display: block; color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; margin-bottom: 2px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div>
+          <h1>NovaRide Admin</h1>
+          <p class="status">Аккаунты клиентов, профили и сохранённые адреса</p>
+        </div>
+        <div class="badge" id="counter">0 пользователей</div>
+      </header>
+
+      <section class="panel">
+        <form class="login" id="loginForm">
+          <input id="passwordInput" type="password" placeholder="Пароль администратора" autocomplete="current-password" />
+          <button type="submit">Открыть</button>
+        </form>
+        <div class="toolbar">
+          <span class="status" id="statusText">Введите пароль администратора.</span>
+          <button class="secondary" type="button" id="refreshBtn">Обновить</button>
+        </div>
+        <div id="tableBox" class="empty">Список появится после входа.</div>
+      </section>
+    </main>
+    <script>
+      const form = document.getElementById("loginForm");
+      const passwordInput = document.getElementById("passwordInput");
+      const tableBox = document.getElementById("tableBox");
+      const statusText = document.getElementById("statusText");
+      const counter = document.getElementById("counter");
+      const refreshBtn = document.getElementById("refreshBtn");
+      let adminPassword = sessionStorage.getItem("novaride_admin_password") || "";
+
+      if (adminPassword) {
+        passwordInput.value = adminPassword;
+        loadUsers();
+      }
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        adminPassword = passwordInput.value.trim();
+        sessionStorage.setItem("novaride_admin_password", adminPassword);
+        loadUsers();
+      });
+
+      refreshBtn.addEventListener("click", loadUsers);
+
+      function esc(value) {
+        return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+      }
+
+      async function loadUsers() {
+        if (!adminPassword) {
+          statusText.textContent = "Введите пароль администратора.";
+          return;
+        }
+
+        statusText.textContent = "Загружаю пользователей...";
+        tableBox.className = "empty";
+        tableBox.textContent = "Загрузка...";
+
+        try {
+          const response = await fetch("/api/admin/users", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: adminPassword }),
+          });
+          const data = await response.json();
+
+          if (!response.ok || !data.ok) {
+            throw new Error(data.error || "Не удалось открыть админ-панель.");
+          }
+
+          renderUsers(data.users || []);
+          statusText.textContent = "Данные обновлены.";
+        } catch (error) {
+          tableBox.className = "empty error";
+          tableBox.textContent = error.message;
+          statusText.textContent = "Проверьте пароль или настройки сервера.";
+        }
+      }
+
+      function renderUsers(users) {
+        counter.textContent = users.length + " пользователей";
+        if (!users.length) {
+          tableBox.className = "empty";
+          tableBox.textContent = "Пока нет зарегистрированных пользователей.";
+          return;
+        }
+
+        tableBox.className = "";
+        tableBox.innerHTML = \`
+          <table>
+            <thead>
+              <tr>
+                <th>Контакт</th>
+                <th>Канал</th>
+                <th>Имя</th>
+                <th>Дата рождения</th>
+                <th>Пол</th>
+                <th>Рейтинг</th>
+                <th>Адреса</th>
+                <th>Создан</th>
+              </tr>
+            </thead>
+            <tbody>
+              \${users.map((user) => \`
+                <tr>
+                  <td data-label="Контакт" class="mono">\${esc(user.destination)}</td>
+                  <td data-label="Канал">\${esc(user.channel)}</td>
+                  <td data-label="Имя">\${esc(user.name)}</td>
+                  <td data-label="Дата рождения">\${esc(user.birthDate)}</td>
+                  <td data-label="Пол">\${user.gender === "female" ? "Женщина" : "Мужчина"}</td>
+                  <td data-label="Рейтинг">\${esc(user.rating)}</td>
+                  <td data-label="Адреса"><div class="addresses">\${(user.savedAddresses || []).map((address) => \`<span>\${esc(address.title)}: \${esc(address.address)}</span>\`).join("") || "<span>Нет адресов</span>"}</div></td>
+                  <td data-label="Создан">\${user.createdAt ? new Date(user.createdAt).toLocaleString("ru-RU") : ""}</td>
+                </tr>
+              \`).join("")}
+            </tbody>
+          </table>
+        \`;
+      }
+    </script>
+  </body>
+</html>`);
+}
+
+async function handleAdminUsers(req, res) {
+  try {
+    const adminPassword = getAdminPassword();
+    if (!adminPassword) {
+      sendJson(res, 503, { ok: false, error: "ADMIN_PASSWORD не настроен в Render Environment." });
+      return;
+    }
+
+    const body = await readJson(req);
+    if (String(body.password || "") !== adminPassword) {
+      sendJson(res, 401, { ok: false, error: "Неверный пароль администратора." });
+      return;
+    }
+
+    const users = await listUsers();
+    sendJson(res, 200, { ok: true, users: users.map(publicUser) });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось загрузить пользователей." });
+  }
+}
+
 async function handleAuthCheck(req, res) {
   try {
     const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
@@ -940,6 +1148,16 @@ function serveStatic(req, res) {
 }
 
 const server = http.createServer((req, res) => {
+  if (req.method === "GET" && req.url === "/admin") {
+    sendAdminPage(res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/admin/users") {
+    handleAdminUsers(req, res);
+    return;
+  }
+
   if (req.method === "GET" && req.url === "/api/auth/config") {
     handleAuthConfig(req, res);
     return;
