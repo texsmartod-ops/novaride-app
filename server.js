@@ -349,11 +349,29 @@ function hasTwilioConfig() {
 }
 
 function hasResendConfig() {
-  return Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
+  return Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM && isHeaderSafeValue(process.env.RESEND_API_KEY));
 }
 
 function hasTurboSmsConfig() {
-  return Boolean(process.env.TURBOSMS_TOKEN && process.env.TURBOSMS_SENDER);
+  return Boolean(process.env.TURBOSMS_TOKEN && process.env.TURBOSMS_SENDER && isHeaderSafeValue(process.env.TURBOSMS_TOKEN));
+}
+
+function isHeaderSafeValue(value) {
+  return /^[\x20-\x7e]+$/.test(String(value || "").trim());
+}
+
+function getHeaderSafeEnv(key, label) {
+  const value = String(process.env[key] || "").trim();
+
+  if (!value) {
+    throw new Error(`${label} не добавлен в Render Environment.`);
+  }
+
+  if (!isHeaderSafeValue(value)) {
+    throw new Error(`${label} в Render заполнен неправильно. Вставьте настоящий ключ без русских букв, пробелов и подсказок вроде "твой token".`);
+  }
+
+  return value;
 }
 
 function normalizeSmsPhone(value) {
@@ -404,14 +422,21 @@ async function sendTwilioSms(to, text) {
 }
 
 async function sendResendEmail(to, code) {
+  const resendApiKey = getHeaderSafeEnv("RESEND_API_KEY", "RESEND_API_KEY");
+  const emailFrom = String(process.env.EMAIL_FROM || "").trim();
+
+  if (!emailFrom) {
+    throw new Error("EMAIL_FROM не добавлен в Render Environment.");
+  }
+
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      Authorization: `Bearer ${resendApiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: process.env.EMAIL_FROM,
+      from: emailFrom,
       to: [to],
       subject: "Код NovaRide",
       html: `
@@ -436,6 +461,7 @@ async function sendResendEmail(to, code) {
 
 async function sendTurboSms(to, text) {
   const phone = normalizeSmsPhone(to);
+  const turboSmsToken = getHeaderSafeEnv("TURBOSMS_TOKEN", "TURBOSMS_TOKEN");
 
   if (!isValidSmsPhone(phone)) {
     throw new Error("Введите полный номер телефона в формате +380XXXXXXXXX.");
@@ -444,7 +470,7 @@ async function sendTurboSms(to, text) {
   const response = await fetch("https://api.turbosms.ua/message/send.json", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.TURBOSMS_TOKEN}`,
+      Authorization: `Bearer ${turboSmsToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
