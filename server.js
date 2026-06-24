@@ -13,6 +13,7 @@ const CODE_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
 const codes = new Map();
 const sessions = new Map();
+const verifiedDestinations = new Map();
 
 const turboSmsErrors = {
   200: "Не указан отправитель SMS.",
@@ -258,6 +259,23 @@ function getSession(token) {
   }
 
   return session;
+}
+
+function markDestinationVerified(destination) {
+  verifiedDestinations.set(destination, Date.now() + 30 * 60 * 1000);
+}
+
+function consumeVerifiedDestination(destination) {
+  const expiresAt = verifiedDestinations.get(destination);
+  if (!expiresAt) return false;
+
+  if (Date.now() > expiresAt) {
+    verifiedDestinations.delete(destination);
+    return false;
+  }
+
+  verifiedDestinations.delete(destination);
+  return true;
 }
 
 function upsertUser({ destination, channel, name, birthDate, gender }) {
@@ -581,6 +599,7 @@ async function handleVerifyCode(req, res) {
     }
 
     codes.delete(destination);
+    markDestinationVerified(destination);
     const sessionToken = createSession(destination);
     const user = findUserByDestination(destination);
 
@@ -663,14 +682,16 @@ async function handleCompleteProfile(req, res) {
   try {
     const body = await readJson(req);
     const session = getSession(body.sessionToken);
+    const verifiedDestination = normalizeDestination(body.destination);
+    const destination = session?.destination || (verifiedDestination && consumeVerifiedDestination(verifiedDestination) ? verifiedDestination : "");
 
-    if (!session) {
+    if (!destination) {
       sendJson(res, 401, { ok: false, error: "Сессия истекла. Подтвердите код еще раз." });
       return;
     }
 
     const user = upsertUser({
-      destination: session.destination,
+      destination,
       channel: body.channel === "email" ? "email" : "sms",
       name: body.name,
       birthDate: body.birthDate,

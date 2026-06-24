@@ -670,7 +670,7 @@ async function finishAuth(event) {
 
   const sessionToken = restorePendingAuthToken();
 
-  if (!sessionToken) {
+  if (!sessionToken && !state.authDestination) {
     alert("Сначала подтвердите телефон или email кодом.");
     setAuthStep("start");
     return;
@@ -684,6 +684,7 @@ async function finishAuth(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         sessionToken,
+        destination: state.authDestination,
         channel: state.authMode === "phone" ? "sms" : "email",
         name,
         birthDate,
