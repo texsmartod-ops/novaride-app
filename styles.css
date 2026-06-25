@@ -1474,6 +1474,26 @@ input:focus {
   display: none;
 }
 
+.workspace.passenger-active-ride .map-class-strip,
+.workspace.passenger-active-ride .route-card,
+.workspace.passenger-active-ride .comment-card,
+.workspace.passenger-active-ride .price-glass,
+.workspace.passenger-active-ride .order-button {
+  display: none;
+}
+
+.workspace.passenger-active-ride .ride-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 14px;
+}
+
+.workspace.passenger-active-ride .active-order-panel.ride-confirmed {
+  margin-top: 0;
+}
+
 .panel {
   padding: 20px;
   overflow-y: auto;

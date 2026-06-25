@@ -1722,6 +1722,7 @@ function clearActiveOrder() {
   clearInterval(activeOrderTimer);
   $("#offerBackdrop")?.remove();
   document.body.classList.remove("has-offer-overlay");
+  $(".workspace")?.classList.remove("passenger-active-ride");
 }
 
 function renderPassengerActiveOrder(order) {
@@ -1740,6 +1741,7 @@ function renderPassengerActiveOrder(order) {
   const progress = Math.max(0, Math.min(100, ((Number(order.secondsLeft || 0) / ORDER_SEARCH_SECONDS) * 100).toFixed(2)));
   panel.style.setProperty("--order-progress", `${progress}%`);
   panel.className = `active-order-panel ${order.status === "accepted" ? "ride-confirmed" : ["expired", "canceled"].includes(order.status) ? "ride-expired" : "offer-toast"}`;
+  $(".workspace")?.classList.toggle("passenger-active-ride", order.status === "accepted");
   const isOfferOverlay = order.status === "open";
   const panelHost = isOfferOverlay ? $("#taxiScreen") : $("#ridePanel");
   if (panel.parentElement !== panelHost) panelHost.append(panel);
