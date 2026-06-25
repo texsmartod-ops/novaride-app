@@ -1351,7 +1351,7 @@ async function showDriverOrderDetails(orderId) {
 
 async function acceptRideOrder(orderId) {
   const button = document.querySelector(`[data-order="${CSS.escape(orderId)}"].order-accept, [data-order="${CSS.escape(orderId)}"].accept-detail-order`);
-  if (button) setButtonLoading(button, true, "Подтверждаем...");
+  if (button) setButtonLoading(button, true, "Отправляем...");
 
   try {
     const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}/accept`, {
@@ -1362,10 +1362,9 @@ async function acceptRideOrder(orderId) {
     const data = await response.json();
 
     if (!response.ok || !data.ok) {
-      throw new Error(data.error || "Не удалось принять заказ.");
+      throw new Error(data.error || "Не удалось отправить предложение.");
     }
 
-    state.rideOrders = state.rideOrders.filter((order) => order.id !== orderId);
     showDriverAcceptedOrder(data.order);
   } catch (error) {
     alert(error.message);
@@ -1377,15 +1376,15 @@ async function acceptRideOrder(orderId) {
 function showDriverAcceptedOrder(order) {
   $(".workspace").classList.add("driver-order-view");
   $("#driverPanel").classList.add("order-detail-mode");
-  $("#screenTitle").textContent = "Заказ подтвержден";
+  $("#screenTitle").textContent = "Предложение отправлено";
   $("#driverContent").innerHTML = `
     <div class="driver-detail-sheet accepted">
-      <div class="accepted-badge">Заказ принят</div>
+      <div class="accepted-badge">Предложение у клиента</div>
       <div class="client-profile-row">
         <div class="client-avatar">${escapeHtml((order.passengerName || "К").slice(0, 1).toUpperCase())}</div>
         <div>
           <strong>${escapeHtml(order.passengerName || "Клиент")}</strong>
-          <span>Рейтинг ${escapeHtml(order.passengerRating || 5)}</span>
+          <span>Клиент выбирает водителя · рейтинг ${escapeHtml(order.passengerRating || 5)}</span>
         </div>
       </div>
       ${renderContactButtons(order.passengerPhone || "+380", "client-")}
@@ -1416,6 +1415,15 @@ function renderPassengerActiveOrder(order) {
     $("#ridePanel").append(panel);
   }
 
+  if (order.status === "expired") {
+    panel.innerHTML = `
+      <div class="accepted-badge expired">Поиск истек</div>
+      <strong>Заказ отменен автоматически</strong>
+      <span>40 секунд прошли. Создайте новый заказ, чтобы снова отправить его водителям.</span>
+    `;
+    return;
+  }
+
   if (order.status === "accepted" && order.driver) {
     const driver = order.driver;
     panel.innerHTML = `
@@ -1434,11 +1442,51 @@ function renderPassengerActiveOrder(order) {
     return;
   }
 
+  const offers = (order.offers || []).slice(-5);
   panel.innerHTML = `
-    <div class="accepted-badge waiting">Заказ в ленте водителей</div>
+    <div class="accepted-badge waiting">Поиск водителя · ${escapeHtml(order.secondsLeft || 0)} сек</div>
     <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
-    <span>Ждем, когда водитель нажмет "Продолжить".</span>
+    <span>${offers.length ? "Выберите подходящее предложение." : "Ждем предложения от водителей."}</span>
+    <div class="offer-list">
+      ${offers
+        .map(
+          (offer) => `
+            <article class="offer-card">
+              <div class="client-profile-row">
+                <div class="client-avatar">${escapeHtml(offer.driver.avatar || offer.driver.name.slice(0, 1).toUpperCase())}</div>
+                <div>
+                  <strong>${escapeHtml(offer.driver.name)}</strong>
+                  <span>Рейтинг ${escapeHtml(offer.driver.rating || 4.86)} · ${escapeHtml(offer.etaMinutes)} мин</span>
+                </div>
+              </div>
+              <strong>${escapeHtml(offer.price)} грн</strong>
+              <button class="primary-action choose-offer" data-order="${escapeHtml(order.id)}" data-offer="${escapeHtml(offer.id)}" type="button">Выбрать</button>
+            </article>
+          `,
+        )
+        .join("")}
+    </div>
   `;
+}
+
+async function acceptPassengerOffer(orderId, offerId) {
+  const button = document.querySelector(`[data-offer="${CSS.escape(offerId)}"]`);
+  if (button) setButtonLoading(button, true, "Выбираем...");
+
+  try {
+    const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}/accept-offer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ offerId }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Не удалось выбрать водителя.");
+    renderPassengerActiveOrder(data.order);
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    if (button) setButtonLoading(button, false);
+  }
 }
 
 async function pollActiveOrder(orderId) {
@@ -1456,7 +1504,7 @@ function startActiveOrderPolling(orderId) {
   if (!orderId) return;
   clearInterval(activeOrderTimer);
   pollActiveOrder(orderId);
-  activeOrderTimer = window.setInterval(() => pollActiveOrder(orderId), 4000);
+  activeOrderTimer = window.setInterval(() => pollActiveOrder(orderId), 1000);
 }
 
 function restoreActiveOrder() {
@@ -1487,8 +1535,8 @@ async function createRideOrder() {
     return;
   }
 
-  if (!state.authSessionToken) {
-    alert("Войдите в аккаунт, чтобы создать заказ.");
+  if (!state.authSessionToken && !state.currentUser?.destination && !state.authDestination) {
+    alert("Профиль не найден. Откройте приложение заново.");
     return;
   }
 
@@ -1501,6 +1549,7 @@ async function createRideOrder() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         sessionToken: state.authSessionToken,
+        destination: state.currentUser?.destination || state.authDestination,
         from,
         to,
         a: mapPoints.a,
@@ -1713,6 +1762,12 @@ function bindEvents() {
     const point = container.dataset.suggestions;
     const center = suggestion.dataset.center.split(",").map(Number);
     setAddressPoint(point, center, suggestion.dataset.label || suggestion.querySelector("strong")?.textContent.trim() || suggestion.textContent.trim());
+  });
+  $("#ridePanel").addEventListener("click", (event) => {
+    const offerButton = event.target.closest(".choose-offer");
+    if (offerButton) {
+      acceptPassengerOffer(offerButton.dataset.order, offerButton.dataset.offer);
+    }
   });
   $("#addStopBtn").addEventListener("click", addStop);
   $$(".class-card").forEach((card) => card.addEventListener("click", () => selectClass(card)));

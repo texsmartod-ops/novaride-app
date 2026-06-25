@@ -14,6 +14,7 @@ const CODES_FILE = path.join(DATA_DIR, "auth-codes.json");
 const CODE_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const ORDER_SEARCH_MS = 40 * 1000;
 const codes = new Map();
 const sessions = new Map();
 const verifiedDestinations = new Map();
@@ -172,6 +173,8 @@ async function ensurePostgres() {
         distance_km NUMERIC DEFAULT 0,
         comment TEXT DEFAULT '',
         status TEXT NOT NULL DEFAULT 'open',
+        offers JSONB DEFAULT '[]'::jsonb,
+        expires_at TIMESTAMPTZ,
         driver_name TEXT DEFAULT '',
         driver_phone TEXT DEFAULT '',
         driver_rating NUMERIC DEFAULT 4.86,
@@ -184,6 +187,8 @@ async function ensurePostgres() {
 
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_name TEXT DEFAULT '';
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS passenger_phone TEXT DEFAULT '';
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS offers JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_phone TEXT DEFAULT '';
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_rating NUMERIC DEFAULT 4.86;
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_avatar TEXT DEFAULT '';
@@ -355,6 +360,8 @@ function orderFromRow(row) {
     distanceKm: Number(row.distance_km || 0),
     comment: row.comment || "",
     status: row.status,
+    offers: Array.isArray(row.offers) ? row.offers : [],
+    expiresAt: row.expires_at instanceof Date ? row.expires_at.toISOString() : row.expires_at,
     driver: row.driver_name
       ? {
           name: row.driver_name,
@@ -386,6 +393,9 @@ function publicOrder(order) {
     distanceKm: order.distanceKm,
     comment: order.comment || "",
     status: order.status,
+    offers: order.offers || [],
+    expiresAt: order.expiresAt,
+    secondsLeft: order.expiresAt ? Math.max(0, Math.ceil((new Date(order.expiresAt).getTime() - Date.now()) / 1000)) : 0,
     driver: order.driver || null,
     acceptedAt: order.acceptedAt,
     createdAt: order.createdAt,
@@ -640,6 +650,7 @@ async function createRideOrder(destination, payload) {
   }
 
   const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + ORDER_SEARCH_MS).toISOString();
   const order = {
     id: createId(),
     userId: user.id,
@@ -655,6 +666,8 @@ async function createRideOrder(destination, payload) {
     distanceKm: Math.max(0, Number(payload.distanceKm) || 0),
     comment: String(payload.comment || "").trim().slice(0, 500),
     status: "open",
+    offers: [],
+    expiresAt,
     createdAt: now,
   };
 
@@ -664,9 +677,9 @@ async function createRideOrder(destination, payload) {
       `
         INSERT INTO ride_orders (
           id, user_id, passenger_name, passenger_rating, from_address, to_address,
-          passenger_phone, from_lng, from_lat, to_lng, to_lat, car_class, price, distance_km, comment, status, created_at
+          passenger_phone, from_lng, from_lat, to_lng, to_lat, car_class, price, distance_km, comment, status, offers, expires_at, created_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18, $19)
         RETURNING *
       `,
       [
@@ -686,6 +699,8 @@ async function createRideOrder(destination, payload) {
         order.distanceKm,
         order.comment,
         order.status,
+        JSON.stringify(order.offers),
+        order.expiresAt,
         order.createdAt,
       ],
     );
@@ -702,12 +717,24 @@ async function listOpenRideOrders() {
   const pool = await ensurePostgres();
 
   if (pool) {
-    const result = await pool.query("SELECT * FROM ride_orders WHERE status = 'open' ORDER BY created_at DESC LIMIT 100");
+    await pool.query("UPDATE ride_orders SET status = 'expired' WHERE status = 'open' AND expires_at IS NOT NULL AND expires_at <= NOW()");
+    const result = await pool.query("SELECT * FROM ride_orders WHERE status = 'open' AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY created_at DESC LIMIT 100");
     return result.rows.map(orderFromRow);
   }
 
-  return readOrders()
-    .filter((order) => order.status === "open")
+  const now = Date.now();
+  const orders = readOrders();
+  let changed = false;
+  orders.forEach((order) => {
+    if (order.status === "open" && order.expiresAt && new Date(order.expiresAt).getTime() <= now) {
+      order.status = "expired";
+      changed = true;
+    }
+  });
+  if (changed) writeOrders(orders);
+
+  return orders
+    .filter((order) => order.status === "open" && (!order.expiresAt || new Date(order.expiresAt).getTime() > now))
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
     .slice(0, 100);
 }
@@ -719,30 +746,102 @@ async function findRideOrderById(orderId) {
   const pool = await ensurePostgres();
   if (pool) {
     const result = await pool.query("SELECT * FROM ride_orders WHERE id = $1 LIMIT 1", [id]);
-    return orderFromRow(result.rows[0]);
+    return await expireOrderIfNeeded(orderFromRow(result.rows[0]));
   }
 
-  return readOrders().find((order) => order.id === id) || null;
+  return await expireOrderIfNeeded(readOrders().find((order) => order.id === id) || null);
 }
 
-async function acceptRideOrder(orderId, payload) {
+async function expireOrderIfNeeded(order) {
+  if (!order || order.status !== "open" || !order.expiresAt || new Date(order.expiresAt).getTime() > Date.now()) {
+    return order;
+  }
+
+  const pool = await ensurePostgres();
+  if (pool) {
+    const result = await pool.query("UPDATE ride_orders SET status = 'expired' WHERE id = $1 AND status = 'open' RETURNING *", [order.id]);
+    return orderFromRow(result.rows[0]) || { ...order, status: "expired" };
+  }
+
+  const orders = readOrders();
+  const index = orders.findIndex((item) => item.id === order.id);
+  if (index >= 0) {
+    orders[index].status = "expired";
+    writeOrders(orders);
+  }
+  return { ...order, status: "expired" };
+}
+
+function buildDriverPayload(payload, order) {
+  const offeredPrice = Math.max(1, Number.parseInt(payload.offerPrice || payload.price || order.price, 10) || order.price);
+  return {
+    id: createId(),
+    price: offeredPrice,
+    etaMinutes: Math.max(2, Number.parseInt(payload.etaMinutes, 10) || Math.floor(3 + Math.random() * 7)),
+    createdAt: new Date().toISOString(),
+    driver: {
+      name: String(payload.driverName || "Водитель NovaRide").trim(),
+      phone: String(payload.driverPhone || "").trim(),
+      rating: Number(payload.driverRating || 4.86),
+      avatar: String(payload.driverAvatar || "").trim(),
+      location: Array.isArray(payload.driverLocation) ? payload.driverLocation.map(Number) : order.a,
+    },
+  };
+}
+
+async function createRideOffer(orderId, payload) {
   const order = await findRideOrderById(orderId);
   if (!order) {
     throw new Error("Заказ не найден.");
   }
 
   if (order.status !== "open") {
-    throw new Error("Этот заказ уже принят другим водителем.");
+    throw new Error(order.status === "expired" ? "Время поиска истекло." : "Этот заказ уже не принимает предложения.");
+  }
+
+  const offer = buildDriverPayload(payload, order);
+  const offers = [...(order.offers || []).filter((item) => item.driver?.phone !== offer.driver.phone), offer].slice(-8);
+
+  const pool = await ensurePostgres();
+  if (pool) {
+    const result = await pool.query(
+      "UPDATE ride_orders SET offers = $2::jsonb WHERE id = $1 AND status = 'open' RETURNING *",
+      [order.id, JSON.stringify(offers)],
+    );
+    return orderFromRow(result.rows[0]);
+  }
+
+  const orders = readOrders();
+  const index = orders.findIndex((item) => item.id === order.id);
+  if (index < 0 || orders[index].status !== "open") {
+    throw new Error("Этот заказ уже не принимает предложения.");
+  }
+
+  orders[index] = {
+    ...orders[index],
+    offers,
+  };
+  writeOrders(orders);
+  return orders[index];
+}
+
+async function acceptRideOffer(orderId, offerId) {
+  const order = await findRideOrderById(orderId);
+  if (!order) {
+    throw new Error("Заказ не найден.");
+  }
+
+  if (order.status !== "open") {
+    throw new Error(order.status === "expired" ? "Время поиска истекло." : "Этот заказ уже завершен.");
+  }
+
+  const offer = (order.offers || []).find((item) => item.id === offerId);
+  if (!offer) {
+    throw new Error("Предложение водителя не найдено.");
   }
 
   const now = new Date().toISOString();
-  const driver = {
-    name: String(payload.driverName || "Водитель NovaRide").trim(),
-    phone: String(payload.driverPhone || "").trim(),
-    rating: Number(payload.driverRating || 4.86),
-    avatar: String(payload.driverAvatar || "").trim(),
-    location: Array.isArray(payload.driverLocation) ? payload.driverLocation.map(Number) : order.a,
-  };
+  const driver = offer.driver;
 
   const pool = await ensurePostgres();
   if (pool) {
@@ -750,35 +849,31 @@ async function acceptRideOrder(orderId, payload) {
       `
         UPDATE ride_orders SET
           status = 'accepted',
-          driver_name = $2,
-          driver_phone = $3,
-          driver_rating = $4,
-          driver_avatar = $5,
-          driver_lng = $6,
-          driver_lat = $7,
-          accepted_at = $8
+          price = $2,
+          driver_name = $3,
+          driver_phone = $4,
+          driver_rating = $5,
+          driver_avatar = $6,
+          driver_lng = $7,
+          driver_lat = $8,
+          accepted_at = $9
         WHERE id = $1 AND status = 'open'
         RETURNING *
       `,
-      [order.id, driver.name, driver.phone, driver.rating, driver.avatar, driver.location[0], driver.location[1], now],
+      [order.id, offer.price, driver.name, driver.phone, driver.rating, driver.avatar, driver.location?.[0] || order.a[0], driver.location?.[1] || order.a[1], now],
     );
-
-    if (!result.rows[0]) {
-      throw new Error("Этот заказ уже принят другим водителем.");
-    }
-
     return orderFromRow(result.rows[0]);
   }
 
   const orders = readOrders();
   const index = orders.findIndex((item) => item.id === order.id);
   if (index < 0 || orders[index].status !== "open") {
-    throw new Error("Этот заказ уже принят другим водителем.");
+    throw new Error("Этот заказ уже завершен.");
   }
-
   orders[index] = {
     ...orders[index],
     status: "accepted",
+    price: offer.price,
     driver,
     acceptedAt: now,
   };
@@ -1408,13 +1503,15 @@ async function handleCreateRideOrder(req, res) {
   try {
     const body = await readJson(req);
     const session = getSession(body.sessionToken);
+    const fallbackDestination = normalizeDestination(body.destination);
+    const destination = session?.destination || fallbackDestination;
 
-    if (!session) {
-      sendJson(res, 401, { ok: false, error: "Сессия истекла. Войдите снова, чтобы создать заказ." });
+    if (!destination) {
+      sendJson(res, 401, { ok: false, error: "Профиль не найден. Откройте приложение заново." });
       return;
     }
 
-    const order = await createRideOrder(session.destination, body);
+    const order = await createRideOrder(destination, body);
     sendJson(res, 200, { ok: true, order: publicOrder(order) });
   } catch (error) {
     sendJson(res, 500, { ok: false, error: error.message || "Не удалось создать заказ." });
@@ -1448,10 +1545,20 @@ async function handleGetRideOrder(req, res, orderId) {
 async function handleAcceptRideOrder(req, res, orderId) {
   try {
     const body = await readJson(req);
-    const order = await acceptRideOrder(orderId, body);
+    const order = await createRideOffer(orderId, body);
     sendJson(res, 200, { ok: true, order: publicOrder(order) });
   } catch (error) {
-    sendJson(res, 500, { ok: false, error: error.message || "Не удалось принять заказ." });
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось отправить предложение." });
+  }
+}
+
+async function handleAcceptRideOffer(req, res, orderId) {
+  try {
+    const body = await readJson(req);
+    const order = await acceptRideOffer(orderId, String(body.offerId || ""));
+    sendJson(res, 200, { ok: true, order: publicOrder(order) });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось выбрать водителя." });
   }
 }
 
@@ -1558,6 +1665,12 @@ const server = http.createServer((req, res) => {
   const orderAcceptMatch = req.url.match(/^\/api\/orders\/([^/]+)\/accept$/);
   if (req.method === "POST" && orderAcceptMatch) {
     handleAcceptRideOrder(req, res, decodeURIComponent(orderAcceptMatch[1]));
+    return;
+  }
+
+  const orderChooseMatch = req.url.match(/^\/api\/orders\/([^/]+)\/accept-offer$/);
+  if (req.method === "POST" && orderChooseMatch) {
+    handleAcceptRideOffer(req, res, decodeURIComponent(orderChooseMatch[1]));
     return;
   }
 

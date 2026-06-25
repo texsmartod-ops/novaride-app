@@ -2594,6 +2594,38 @@ input:focus {
   background: linear-gradient(135deg, var(--blue), #7c3cff);
 }
 
+.accepted-badge.expired {
+  background: linear-gradient(135deg, #c93232, #ff7a7a);
+}
+
+.offer-list {
+  display: grid;
+  gap: 10px;
+}
+
+.offer-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid rgba(29, 103, 255, 0.16);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.offer-card > strong {
+  color: var(--blue);
+  font-size: 1.12rem;
+  font-weight: 1000;
+  white-space: nowrap;
+}
+
+.offer-card .primary-action {
+  grid-column: 1 / -1;
+  min-height: 44px;
+}
+
 .driver-live-line {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
