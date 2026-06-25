@@ -15,6 +15,7 @@ const state = {
   currentSection: "ride",
   driverMode: false,
   rideOrders: [],
+  declinedOffers: {},
   language: "ru",
   distanceUnit: "km",
   savedAddresses: [
@@ -1300,7 +1301,6 @@ function renderDriverOrders(orders) {
           ${order.comment ? `<em>${escapeHtml(order.comment)}</em>` : ""}
           <div class="client-price-badge">Цена клиента: <strong>${escapeHtml(order.price || state.selectedPrice)} грн</strong></div>
           <div class="bid-row">
-            <input value="${escapeHtml(order.price || state.selectedPrice)}" aria-label="Ваша цена" />
             <button class="mini-action order-detail" data-order="${escapeHtml(order.id)}" type="button">Подробнее</button>
             <button class="primary-action order-accept" data-order="${escapeHtml(order.id)}" type="button">Продолжить</button>
           </div>
@@ -1630,7 +1630,8 @@ function renderPassengerActiveOrder(order) {
     return;
   }
 
-  const offers = (order.offers || []).slice(-5);
+  const declined = state.declinedOffers[order.id] || [];
+  const offers = (order.offers || []).filter((offer) => !declined.includes(offer.id)).slice(-5);
   panel.innerHTML = `
     <div class="accepted-badge waiting">Поиск водителя · ${escapeHtml(order.secondsLeft || 0)} сек</div>
     <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
@@ -1648,7 +1649,10 @@ function renderPassengerActiveOrder(order) {
                 </div>
               </div>
               <strong>${escapeHtml(offer.price)} грн</strong>
-              <button class="primary-action choose-offer" data-order="${escapeHtml(order.id)}" data-offer="${escapeHtml(offer.id)}" type="button">Выбрать</button>
+              <div class="offer-actions">
+                <button class="ghost-action decline-offer" data-offer="${escapeHtml(offer.id)}" type="button">Отклонить</button>
+                <button class="primary-action choose-offer" data-order="${escapeHtml(order.id)}" data-offer="${escapeHtml(offer.id)}" type="button">Выбрать</button>
+              </div>
             </article>
           `,
         )
@@ -1656,6 +1660,19 @@ function renderPassengerActiveOrder(order) {
     </div>
     <button class="ghost-action cancel-order" data-order="${escapeHtml(order.id)}" data-sender="passenger" type="button">Отменить поиск</button>
   `;
+}
+
+function declinePassengerOffer(offerId) {
+  const panel = $("#activeOrderPanel");
+  const orderId = panel?.querySelector(".choose-offer")?.dataset.order || localStorage.getItem(ACTIVE_ORDER_KEY);
+  if (!orderId) return;
+  state.declinedOffers[orderId] = [...(state.declinedOffers[orderId] || []), offerId];
+  const card = document.querySelector(`.decline-offer[data-offer="${CSS.escape(offerId)}"]`)?.closest(".offer-card");
+  card?.remove();
+  if (!document.querySelector(".offer-card")) {
+    const list = $(".offer-list");
+    if (list) list.innerHTML = `<div class="driver-empty-card"><strong>Предложение отклонено</strong><span>Ждем другие варианты от водителей.</span></div>`;
+  }
 }
 
 async function acceptPassengerOffer(orderId, offerId) {
@@ -2016,7 +2033,7 @@ function bindEvents() {
     const center = suggestion.dataset.center.split(",").map(Number);
     setAddressPoint(point, center, suggestion.dataset.label || suggestion.querySelector("strong")?.textContent.trim() || suggestion.textContent.trim());
   });
-  $("#ridePanel").addEventListener("click", (event) => {
+  $("#taxiScreen").addEventListener("click", (event) => {
     const openChatButton = event.target.closest(".open-chat");
     if (openChatButton) {
       focusRideChat(openChatButton);
@@ -2026,6 +2043,12 @@ function bindEvents() {
     const offerButton = event.target.closest(".choose-offer");
     if (offerButton) {
       acceptPassengerOffer(offerButton.dataset.order, offerButton.dataset.offer);
+      return;
+    }
+
+    const declineButton = event.target.closest(".decline-offer");
+    if (declineButton) {
+      declinePassengerOffer(declineButton.dataset.offer);
       return;
     }
 

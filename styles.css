@@ -28,6 +28,10 @@ body {
   color: var(--ink);
 }
 
+body.has-offer-overlay {
+  overflow: hidden;
+}
+
 button,
 input {
   font: inherit;
@@ -2298,6 +2302,19 @@ input:focus {
   padding: 6px;
   background: rgba(255, 255, 255, 0.72);
   margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-flow: initial;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.driver-tab {
+  min-width: 0;
+  padding: 0 6px;
+  font-size: clamp(0.78rem, 3.2vw, 0.95rem);
+  white-space: nowrap;
 }
 
 .driver-panel {
@@ -2520,10 +2537,6 @@ input:focus {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   align-items: stretch;
-}
-
-.bid-row input {
-  grid-column: 1 / -1;
 }
 
 .client-price-badge,
@@ -2811,8 +2824,21 @@ input:focus {
 }
 
 .offer-card .primary-action {
-  grid-column: 1 / -1;
   min-height: 44px;
+}
+
+.offer-actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.offer-actions .primary-action,
+.offer-actions .ghost-action {
+  min-height: 44px;
+  width: 100%;
+  justify-content: center;
 }
 
 .driver-live-line {
@@ -2866,10 +2892,6 @@ input:focus {
   .bid-row {
     grid-column: 1 / -1;
     grid-template-columns: 1fr 1fr;
-  }
-
-  .bid-row input {
-    grid-column: 1 / -1;
   }
 
   .client-price-badge,
