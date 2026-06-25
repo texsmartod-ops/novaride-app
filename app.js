@@ -162,12 +162,12 @@ const sections = {
 
 const driverTabs = {
   feed: `
-    <div class="section-hero driver-hero"><span>Режим водителя</span><h2>Лента заказов</h2><p>Выбирайте подходящие поездки и предлагайте свою цену.</p></div>
+    <div class="section-hero driver-hero compact"><span>Режим водителя</span><h2>Лента заказов</h2></div>
     <div class="driver-feed" id="driverFeed"><article class="driver-empty-card">Загружаем реальные заказы...</article></div>
     <div class="driver-route-preview" id="driverRoutePreview"></div>
   `,
   stats: `
-    <div class="section-hero driver-hero"><span>Динамика</span><h2>Статистика</h2><p>Ваш рейтинг и заработок в реальном времени.</p></div>
+    <div class="section-hero driver-hero compact"><span>Динамика</span><h2>Статистика</h2></div>
     <div class="feature-grid"><article class="metric-card"><strong>4.86</strong><span>рейтинг</span></article><article class="metric-card"><strong>1 280 грн</strong><span>сегодня</span></article><article class="metric-card"><strong>8 740 грн</strong><span>неделя</span></article><article class="metric-card"><strong>34 600 грн</strong><span>месяц</span></article></div>
   `,
   wallet: `
@@ -1295,9 +1295,9 @@ function renderDriverOrders(orders) {
         <article class="driver-order-card">
           <i></i>
           <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
-          <span>${escapeHtml(order.carClass)} · ${Number(order.distanceKm || 0).toFixed(1)} км · рейтинг клиента ${escapeHtml(order.passengerRating || 5)}</span>
+          <span>${escapeHtml(order.carClass)} · ${Number(order.distanceKm || 0).toFixed(1)} км · рейтинг ${escapeHtml(order.passengerRating || 5)}</span>
           ${renderOrderStops(order)}
-          ${order.comment ? `<em>${escapeHtml(order.comment)}</em>` : `<em>Без комментария</em>`}
+          ${order.comment ? `<em>${escapeHtml(order.comment)}</em>` : ""}
           <div class="client-price-badge">Цена клиента: <strong>${escapeHtml(order.price || state.selectedPrice)} грн</strong></div>
           <div class="bid-row">
             <input value="${escapeHtml(order.price || state.selectedPrice)}" aria-label="Ваша цена" />
@@ -1496,9 +1496,10 @@ async function acceptRideOrder(orderId) {
   }
 }
 
-function showDriverAcceptedOrder(order) {
-  clearInterval(driverAcceptedTimer);
-  if (order?.id && ["open", "accepted"].includes(order.status)) {
+function showDriverAcceptedOrder(order, options = {}) {
+  const shouldPoll = options.poll !== false;
+  const shouldSyncMap = options.syncMap !== false;
+  if (shouldPoll && order?.id && ["open", "accepted"].includes(order.status) && !driverAcceptedTimer) {
     driverAcceptedTimer = window.setInterval(() => pollDriverAcceptedOrder(order.id), 1500);
   }
 
@@ -1528,9 +1529,10 @@ function showDriverAcceptedOrder(order) {
         ${renderOrderStops(order)}
       </div>
       ${order.status === "accepted" ? renderRideChat(order, "driver") : ""}
+      <button class="ghost-action cancel-order" data-order="${escapeHtml(order.id)}" data-sender="driver" type="button">Отменить заказ</button>
     </div>
   `;
-  applyOrderToMap(order);
+  if (shouldSyncMap) applyOrderToMap(order);
 }
 
 async function pollDriverAcceptedOrder(orderId) {
@@ -1540,10 +1542,12 @@ async function pollDriverAcceptedOrder(orderId) {
     if (!response.ok || !data.ok) throw new Error(data.error || "Заказ не найден.");
     if (!["open", "accepted"].includes(data.order.status)) {
       clearInterval(driverAcceptedTimer);
+      driverAcceptedTimer = null;
     }
-    showDriverAcceptedOrder(data.order);
+    showDriverAcceptedOrder(data.order, { syncMap: false, poll: true });
   } catch {
     clearInterval(driverAcceptedTimer);
+    driverAcceptedTimer = null;
   }
 }
 
@@ -1567,13 +1571,14 @@ function renderPassengerActiveOrder(order) {
   }
   const progress = Math.max(0, Math.min(100, ((Number(order.secondsLeft || 0) / ORDER_SEARCH_SECONDS) * 100).toFixed(2)));
   panel.style.setProperty("--order-progress", `${progress}%`);
-  panel.className = `active-order-panel ${order.status === "accepted" ? "ride-confirmed" : order.status === "expired" ? "ride-expired" : "offer-toast"}`;
+  panel.className = `active-order-panel ${order.status === "accepted" ? "ride-confirmed" : ["expired", "canceled"].includes(order.status) ? "ride-expired" : "offer-toast"}`;
 
-  if (order.status === "expired") {
+  if (["expired", "canceled"].includes(order.status)) {
+    clearActiveOrder();
     panel.innerHTML = `
-      <div class="accepted-badge expired">Поиск истек</div>
-      <strong>Заказ отменен автоматически</strong>
-      <span>40 секунд прошли. Создайте новый заказ, чтобы снова отправить его водителям.</span>
+      <div class="accepted-badge expired">${order.status === "canceled" ? "Заказ отменен" : "Поиск истек"}</div>
+      <strong>${order.status === "canceled" ? "Поездка отменена" : "Заказ отменен автоматически"}</strong>
+      <span>${order.status === "canceled" ? "Можно создать новый заказ, когда будете готовы." : "40 секунд прошли. Создайте новый заказ, чтобы снова отправить его водителям."}</span>
     `;
     return;
   }
@@ -1592,6 +1597,7 @@ function renderPassengerActiveOrder(order) {
       ${renderContactButtons(driver.phone || "+380", "driver-")}
       <div class="driver-live-line"><span></span><strong>Таксист движется по маршруту</strong></div>
       ${renderRideChat(order, "passenger")}
+      <button class="ghost-action cancel-order" data-order="${escapeHtml(order.id)}" data-sender="passenger" type="button">Отменить заказ</button>
     `;
     applyOrderToMap(order);
     showDriverCarOnMap(order);
@@ -1622,6 +1628,7 @@ function renderPassengerActiveOrder(order) {
         )
         .join("")}
     </div>
+    <button class="ghost-action cancel-order" data-order="${escapeHtml(order.id)}" data-sender="passenger" type="button">Отменить поиск</button>
   `;
 }
 
@@ -1668,6 +1675,33 @@ async function sendRideMessage(orderId, sender) {
     input.value = "";
     if (sender === "driver") {
       showDriverAcceptedOrder(data.order);
+    } else {
+      renderPassengerActiveOrder(data.order);
+    }
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    if (button) setButtonLoading(button, false);
+  }
+}
+
+async function cancelRideOrder(orderId, sender) {
+  const button = document.querySelector(`.cancel-order[data-order="${CSS.escape(orderId)}"]`);
+  if (button) setButtonLoading(button, true, "Отменяем...");
+
+  try {
+    const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cancelledBy: sender }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Не удалось отменить заказ.");
+
+    if (sender === "driver") {
+      clearInterval(driverAcceptedTimer);
+      driverAcceptedTimer = null;
+      showDriverContent("feed");
     } else {
       renderPassengerActiveOrder(data.order);
     }
@@ -1966,6 +2000,12 @@ function bindEvents() {
     const chatButton = event.target.closest(".send-ride-message");
     if (chatButton) {
       sendRideMessage(chatButton.dataset.order, chatButton.dataset.sender);
+      return;
+    }
+
+    const cancelButton = event.target.closest(".cancel-order");
+    if (cancelButton) {
+      cancelRideOrder(cancelButton.dataset.order, cancelButton.dataset.sender);
     }
   });
   $("#ridePanel").addEventListener("keydown", (event) => {
@@ -2011,6 +2051,12 @@ function bindEvents() {
     const chatButton = event.target.closest(".send-ride-message");
     if (chatButton) {
       sendRideMessage(chatButton.dataset.order, chatButton.dataset.sender);
+      return;
+    }
+
+    const cancelButton = event.target.closest(".cancel-order");
+    if (cancelButton) {
+      cancelRideOrder(cancelButton.dataset.order, cancelButton.dataset.sender);
       return;
     }
 

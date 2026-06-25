@@ -941,6 +941,50 @@ async function appendRideMessage(orderId, payload) {
   return orders[index];
 }
 
+async function cancelRideOrder(orderId, payload = {}) {
+  const order = await findRideOrderById(orderId);
+  if (!order) {
+    throw new Error("Заказ не найден.");
+  }
+
+  if (!["open", "accepted"].includes(order.status)) {
+    throw new Error("Этот заказ уже нельзя отменить.");
+  }
+
+  const now = new Date().toISOString();
+  const cancelledBy = ["driver", "passenger"].includes(payload.cancelledBy) ? payload.cancelledBy : "passenger";
+  const message = {
+    id: createId(),
+    sender: "system",
+    name: "NovaRide",
+    text: cancelledBy === "driver" ? "Водитель отменил заказ." : "Клиент отменил заказ.",
+    createdAt: now,
+  };
+  const messages = [...(order.messages || []), message].slice(-80);
+
+  const pool = await ensurePostgres();
+  if (pool) {
+    const result = await pool.query(
+      "UPDATE ride_orders SET status = 'canceled', messages = $2::jsonb WHERE id = $1 AND status IN ('open', 'accepted') RETURNING *",
+      [order.id, JSON.stringify(messages)],
+    );
+    return orderFromRow(result.rows[0]);
+  }
+
+  const orders = readOrders();
+  const index = orders.findIndex((item) => item.id === order.id);
+  if (index < 0 || !["open", "accepted"].includes(orders[index].status)) {
+    throw new Error("Этот заказ уже нельзя отменить.");
+  }
+  orders[index] = {
+    ...orders[index],
+    status: "canceled",
+    messages,
+  };
+  writeOrders(orders);
+  return orders[index];
+}
+
 async function deliverCode({ channel, destination, code }) {
   if (channel === "email" && hasResendConfig()) {
     await sendResendEmail(destination, code);
@@ -1632,6 +1676,16 @@ async function handleRideMessage(req, res, orderId) {
   }
 }
 
+async function handleCancelRideOrder(req, res, orderId) {
+  try {
+    const body = await readJson(req);
+    const order = await cancelRideOrder(orderId, body);
+    sendJson(res, 200, { ok: true, order: publicOrder(order) });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось отменить заказ." });
+  }
+}
+
 async function handleDeleteAccount(req, res) {
   try {
     const body = await readJson(req);
@@ -1747,6 +1801,12 @@ const server = http.createServer((req, res) => {
   const orderMessageMatch = req.url.match(/^\/api\/orders\/([^/]+)\/messages$/);
   if (req.method === "POST" && orderMessageMatch) {
     handleRideMessage(req, res, decodeURIComponent(orderMessageMatch[1]));
+    return;
+  }
+
+  const orderCancelMatch = req.url.match(/^\/api\/orders\/([^/]+)\/cancel$/);
+  if (req.method === "POST" && orderCancelMatch) {
+    handleCancelRideOrder(req, res, decodeURIComponent(orderCancelMatch[1]));
     return;
   }
 
