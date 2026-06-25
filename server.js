@@ -173,7 +173,9 @@ async function ensurePostgres() {
         distance_km NUMERIC DEFAULT 0,
         comment TEXT DEFAULT '',
         status TEXT NOT NULL DEFAULT 'open',
+        stops JSONB DEFAULT '[]'::jsonb,
         offers JSONB DEFAULT '[]'::jsonb,
+        messages JSONB DEFAULT '[]'::jsonb,
         expires_at TIMESTAMPTZ,
         driver_name TEXT DEFAULT '',
         driver_phone TEXT DEFAULT '',
@@ -187,7 +189,9 @@ async function ensurePostgres() {
 
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_name TEXT DEFAULT '';
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS passenger_phone TEXT DEFAULT '';
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS stops JSONB DEFAULT '[]'::jsonb;
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS offers JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS messages JSONB DEFAULT '[]'::jsonb;
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_phone TEXT DEFAULT '';
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_rating NUMERIC DEFAULT 4.86;
@@ -360,7 +364,9 @@ function orderFromRow(row) {
     distanceKm: Number(row.distance_km || 0),
     comment: row.comment || "",
     status: row.status,
+    stops: Array.isArray(row.stops) ? row.stops : [],
     offers: Array.isArray(row.offers) ? row.offers : [],
+    messages: Array.isArray(row.messages) ? row.messages : [],
     expiresAt: row.expires_at instanceof Date ? row.expires_at.toISOString() : row.expires_at,
     driver: row.driver_name
       ? {
@@ -393,7 +399,9 @@ function publicOrder(order) {
     distanceKm: order.distanceKm,
     comment: order.comment || "",
     status: order.status,
+    stops: order.stops || [],
     offers: order.offers || [],
+    messages: order.messages || [],
     expiresAt: order.expiresAt,
     secondsLeft: order.expiresAt ? Math.max(0, Math.ceil((new Date(order.expiresAt).getTime() - Date.now()) / 1000)) : 0,
     driver: order.driver || null,
@@ -642,6 +650,15 @@ async function createRideOrder(destination, payload) {
 
   const fromCoords = Array.isArray(payload.a) ? payload.a.map(Number) : [];
   const toCoords = Array.isArray(payload.b) ? payload.b.map(Number) : [];
+  const stops = Array.isArray(payload.stops)
+    ? payload.stops
+        .map((stop) => ({
+          label: String(stop?.label || "").trim(),
+          coordinates: Array.isArray(stop?.coordinates) ? stop.coordinates.map(Number) : [],
+        }))
+        .filter((stop) => stop.label && stop.coordinates.length === 2 && !stop.coordinates.some(Number.isNaN))
+        .slice(0, 4)
+    : [];
   const from = String(payload.from || "").trim();
   const to = String(payload.to || "").trim();
 
@@ -666,7 +683,9 @@ async function createRideOrder(destination, payload) {
     distanceKm: Math.max(0, Number(payload.distanceKm) || 0),
     comment: String(payload.comment || "").trim().slice(0, 500),
     status: "open",
+    stops,
     offers: [],
+    messages: [],
     expiresAt,
     createdAt: now,
   };
@@ -677,9 +696,9 @@ async function createRideOrder(destination, payload) {
       `
         INSERT INTO ride_orders (
           id, user_id, passenger_name, passenger_rating, from_address, to_address,
-          passenger_phone, from_lng, from_lat, to_lng, to_lat, car_class, price, distance_km, comment, status, offers, expires_at, created_at
+          passenger_phone, from_lng, from_lat, to_lng, to_lat, car_class, price, distance_km, comment, status, stops, offers, messages, expires_at, created_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18, $19)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, $19::jsonb, $20, $21)
         RETURNING *
       `,
       [
@@ -699,7 +718,9 @@ async function createRideOrder(destination, payload) {
         order.distanceKm,
         order.comment,
         order.status,
+        JSON.stringify(order.stops),
         JSON.stringify(order.offers),
+        JSON.stringify(order.messages),
         order.expiresAt,
         order.createdAt,
       ],
@@ -876,6 +897,45 @@ async function acceptRideOffer(orderId, offerId) {
     price: offer.price,
     driver,
     acceptedAt: now,
+  };
+  writeOrders(orders);
+  return orders[index];
+}
+
+async function appendRideMessage(orderId, payload) {
+  const order = await findRideOrderById(orderId);
+  if (!order) {
+    throw new Error("Заказ не найден.");
+  }
+
+  const text = String(payload.text || "").trim().slice(0, 500);
+  if (!text) {
+    throw new Error("Напишите сообщение.");
+  }
+
+  const message = {
+    id: createId(),
+    sender: ["driver", "passenger"].includes(payload.sender) ? payload.sender : "passenger",
+    name: String(payload.name || (payload.sender === "driver" ? order.driver?.name : order.passengerName) || "NovaRide").trim(),
+    text,
+    createdAt: new Date().toISOString(),
+  };
+  const messages = [...(order.messages || []), message].slice(-80);
+
+  const pool = await ensurePostgres();
+  if (pool) {
+    const result = await pool.query("UPDATE ride_orders SET messages = $2::jsonb WHERE id = $1 RETURNING *", [order.id, JSON.stringify(messages)]);
+    return orderFromRow(result.rows[0]);
+  }
+
+  const orders = readOrders();
+  const index = orders.findIndex((item) => item.id === order.id);
+  if (index < 0) {
+    throw new Error("Заказ не найден.");
+  }
+  orders[index] = {
+    ...orders[index],
+    messages,
   };
   writeOrders(orders);
   return orders[index];
@@ -1562,6 +1622,16 @@ async function handleAcceptRideOffer(req, res, orderId) {
   }
 }
 
+async function handleRideMessage(req, res, orderId) {
+  try {
+    const body = await readJson(req);
+    const order = await appendRideMessage(orderId, body);
+    sendJson(res, 200, { ok: true, order: publicOrder(order) });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось отправить сообщение." });
+  }
+}
+
 async function handleDeleteAccount(req, res) {
   try {
     const body = await readJson(req);
@@ -1671,6 +1741,12 @@ const server = http.createServer((req, res) => {
   const orderChooseMatch = req.url.match(/^\/api\/orders\/([^/]+)\/accept-offer$/);
   if (req.method === "POST" && orderChooseMatch) {
     handleAcceptRideOffer(req, res, decodeURIComponent(orderChooseMatch[1]));
+    return;
+  }
+
+  const orderMessageMatch = req.url.match(/^\/api\/orders\/([^/]+)\/messages$/);
+  if (req.method === "POST" && orderMessageMatch) {
+    handleRideMessage(req, res, decodeURIComponent(orderMessageMatch[1]));
     return;
   }
 

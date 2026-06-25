@@ -30,6 +30,7 @@ const PENDING_AUTH_KEY = "novaride_pending_auth";
 const VERIFIED_AUTH_KEY = "novaride_verified_auth";
 const PERSISTENT_AUTH_KEY = "novaride_persistent_auth";
 const ACTIVE_ORDER_KEY = "novaride_active_order";
+const ORDER_SEARCH_SECONDS = 40;
 
 let MAPBOX_TOKEN = "";
 const ODESSA_CENTER = [30.7233, 46.4825];
@@ -37,16 +38,20 @@ let novaMap;
 let activeMapPoint = "a";
 let pickupMarker;
 let destinationMarker;
+let stopMarkers = [];
 let userLocationMarker;
 let mapPoints = {
   a: [30.7326, 46.4858],
   b: [30.7597, 46.4304],
+  stops: [],
 };
 let addressSearchTimer;
 let accountCheckTimer;
 let driverOrdersTimer;
 let activeOrderTimer;
+let driverAcceptedTimer;
 let driverCarMarker;
+let lastRouteKey = "";
 
 const ODESSA_PLACES = [
   { name: "Дерибасовская 1", subtitle: "Центр Одессы", aliases: ["дерибасовская"], center: [30.7355, 46.4846] },
@@ -742,9 +747,18 @@ async function finishAuth(event) {
 function addStop() {
   const count = $$("#stopsList .field").length + 1;
   const label = document.createElement("label");
-  label.className = "field";
-  label.innerHTML = `<span>Остановка ${count}</span><input value="Одесса, остановка по пути" />`;
+  label.className = "field stop-field";
+  label.innerHTML = `<span>Остановка ${count}</span><input class="stop-input" data-stop-index="${count - 1}" placeholder="Адрес остановки" autocomplete="off" />`;
   $("#stopsList").append(label);
+  const input = label.querySelector("input");
+  input.focus();
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      geocodeStop(input);
+    }
+  });
+  input.addEventListener("blur", () => geocodeStop(input));
 }
 
 function selectClass(card) {
@@ -776,6 +790,23 @@ function setRouteGeoJson(coordinates) {
       type: "LineString",
       coordinates,
     },
+  });
+}
+
+function clearStopMarkers() {
+  stopMarkers.forEach((marker) => marker.remove());
+  stopMarkers = [];
+}
+
+function renderStopMarkers() {
+  clearStopMarkers();
+  if (!novaMap) return;
+
+  mapPoints.stops.forEach((stop, index) => {
+    const marker = new mapboxgl.Marker({ element: createMapMarker(String(index + 1), "stop"), draggable: false })
+      .setLngLat(stop.coordinates)
+      .addTo(novaMap);
+    stopMarkers.push(marker);
   });
 }
 
@@ -876,19 +907,22 @@ function installRouteLayer() {
 async function updateRouteLine() {
   if (!novaMap || !mapPoints.a || !mapPoints.b) return;
 
-  const directRoute = [mapPoints.a, mapPoints.b];
+  const routePoints = [mapPoints.a, ...(mapPoints.stops || []).map((stop) => stop.coordinates).filter(Boolean), mapPoints.b];
+  const directRoute = routePoints;
   const detailPadding = $(".workspace")?.classList.contains("driver-order-view")
     ? { top: 92, right: 70, bottom: 92, left: 70 }
     : { top: 120, right: 460, bottom: 180, left: 80 };
 
   try {
-    const coordinates = `${mapPoints.a.join(",")};${mapPoints.b.join(",")}`;
+    const coordinates = routePoints.map((point) => point.join(",")).join(";");
     const response = await fetch(
       `https://api.mapbox.com/directions/v5/mapbox/driving/${coordinates}?geometries=geojson&overview=full&steps=false&alternatives=false&language=${getMapLanguage()}&access_token=${MAPBOX_TOKEN}`,
     );
     const data = await response.json();
     const route = data.routes?.[0]?.geometry?.coordinates || directRoute;
-    const distanceKm = data.routes?.[0]?.distance ? data.routes[0].distance / 1000 : getDirectDistanceKm(mapPoints.a, mapPoints.b);
+    const distanceKm = data.routes?.[0]?.distance
+      ? data.routes[0].distance / 1000
+      : routePoints.slice(1).reduce((sum, point, index) => sum + getDirectDistanceKm(routePoints[index], point), 0);
     setRouteGeoJson(route);
     updateTripPrice(distanceKm);
 
@@ -896,7 +930,7 @@ async function updateRouteLine() {
     novaMap.fitBounds(bounds, { padding: detailPadding, maxZoom: 14.5, duration: 700 });
   } catch {
     setRouteGeoJson(directRoute);
-    updateTripPrice(getDirectDistanceKm(mapPoints.a, mapPoints.b));
+    updateTripPrice(routePoints.slice(1).reduce((sum, point, index) => sum + getDirectDistanceKm(routePoints[index], point), 0));
 
     const bounds = directRoute.reduce((box, coord) => box.extend(coord), new mapboxgl.LngLatBounds(directRoute[0], directRoute[0]));
     novaMap.fitBounds(bounds, { padding: detailPadding, maxZoom: 14.5, duration: 700 });
@@ -961,6 +995,38 @@ async function geocodeAddress(point, query) {
     setAddressPoint(point, feature.center, formatMapboxPlace(feature));
   } catch {
     // Keep the typed address if geocoding is temporarily unavailable.
+  }
+}
+
+async function geocodeStop(input) {
+  const cleanQuery = input.value.trim();
+  const index = Number(input.dataset.stopIndex || 0);
+  if (!cleanQuery || !window.mapboxgl) return;
+
+  try {
+    const knownPlace = ODESSA_PLACES.find((place) => matchesLocalPlace(place, cleanQuery) || cleanQuery.toLowerCase().includes(place.name.toLowerCase()));
+    if (knownPlace) {
+      mapPoints.stops[index] = { label: knownPlace.name, coordinates: knownPlace.center };
+      input.value = knownPlace.name;
+      renderStopMarkers();
+      updateRouteLine();
+      return;
+    }
+
+    const response = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cleanQuery}, Одесса, Україна`)}.json?limit=5&language=${getMapLanguage()}&country=ua&bbox=30.55,46.32,30.85,46.58&proximity=${ODESSA_CENTER.join(",")}&types=address,poi,place,locality,neighborhood&access_token=${MAPBOX_TOKEN}`,
+    );
+    const data = await response.json();
+    const feature = (data.features || []).find(isUsableMapboxFeature);
+    if (!feature) return;
+
+    const label = formatMapboxPlace(feature);
+    mapPoints.stops[index] = { label, coordinates: feature.center };
+    input.value = label;
+    renderStopMarkers();
+    updateRouteLine();
+  } catch {
+    // Keep the typed stop address if geocoding is temporarily unavailable.
   }
 }
 
@@ -1066,6 +1132,7 @@ function applyTheme(theme) {
     novaMap.once("style.load", () => {
       localizeMapLabels();
       installRouteLayer();
+      renderStopMarkers();
       updateRouteLine();
     });
   }
@@ -1228,8 +1295,10 @@ function renderDriverOrders(orders) {
         <article class="driver-order-card">
           <i></i>
           <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
-          <span>${escapeHtml(order.carClass)} · ${Number(order.distanceKm || 0).toFixed(1)} км · пассажир ${escapeHtml(order.passengerRating || 5)}</span>
+          <span>${escapeHtml(order.carClass)} · ${Number(order.distanceKm || 0).toFixed(1)} км · рейтинг клиента ${escapeHtml(order.passengerRating || 5)}</span>
+          ${renderOrderStops(order)}
           ${order.comment ? `<em>${escapeHtml(order.comment)}</em>` : `<em>Без комментария</em>`}
+          <div class="client-price-badge">Цена клиента: <strong>${escapeHtml(order.price || state.selectedPrice)} грн</strong></div>
           <div class="bid-row">
             <input value="${escapeHtml(order.price || state.selectedPrice)}" aria-label="Ваша цена" />
             <button class="mini-action order-detail" data-order="${escapeHtml(order.id)}" type="button">Подробнее</button>
@@ -1279,13 +1348,76 @@ function renderContactButtons(phone, prefix = "") {
   return `
     <div class="${prefix}contact-actions">
       <a class="round-contact" href="tel:${escapeHtml(safePhone || "+380")}"><span class="phone-mini-icon"></span>Позвонить</a>
-      <button class="round-contact" type="button"><span class="chat-mini-icon"></span>Чат</button>
+      <button class="round-contact open-chat" type="button"><span class="chat-mini-icon"></span>Чат</button>
     </div>
   `;
 }
 
+function renderMapButton(order, target = "pickup") {
+  const point = target === "destination" ? order?.b : order?.a;
+  const fallback = target === "destination" ? order?.to : order?.from;
+  const destination = Array.isArray(point) ? `${point[1]},${point[0]}` : encodeURIComponent(fallback || "Одесса");
+  return `<a class="round-contact maps-contact" href="https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving" target="_blank" rel="noopener">Открыть карту</a>`;
+}
+
+function renderOrderStops(order) {
+  const stops = order?.stops || [];
+  if (!stops.length) return "";
+  return `<div class="order-stops">${stops.map((stop, index) => `<span>${index + 1}. ${escapeHtml(stop.label)}</span>`).join("")}</div>`;
+}
+
+function renderRideChat(order, sender) {
+  const messages = order?.messages || [];
+  return `
+    <div class="ride-chat" data-chat="${escapeHtml(order.id)}">
+      <div class="ride-chat-log">
+        ${
+          messages.length
+            ? messages
+                .map(
+                  (message) => `
+                    <div class="ride-message ${message.sender === sender ? "mine" : ""}">
+                      <strong>${escapeHtml(message.name || (message.sender === "driver" ? "Водитель" : "Клиент"))}</strong>
+                      <span>${escapeHtml(message.text)}</span>
+                    </div>
+                  `,
+                )
+                .join("")
+            : `<div class="ride-message system"><span>Чат готов. Напишите первое сообщение.</span></div>`
+        }
+      </div>
+      <div class="ride-chat-compose">
+        <input data-chat-input="${escapeHtml(order.id)}" placeholder="Сообщение" />
+        <button class="primary-action send-ride-message" data-order="${escapeHtml(order.id)}" data-sender="${sender}" type="button">Отправить</button>
+      </div>
+    </div>
+  `;
+}
+
+function applyOrderToMap(order) {
+  if (!order?.a || !order?.b) return;
+  const routeKey = JSON.stringify([order.a, order.stops || [], order.b]);
+  mapPoints.a = order.a;
+  mapPoints.b = order.b;
+  mapPoints.stops = order.stops || [];
+  $("#fromInput").value = order.from;
+  $("#toInput").value = order.to;
+  pickupMarker?.setLngLat(order.a);
+  destinationMarker?.setLngLat(order.b);
+  renderStopMarkers();
+  window.setTimeout(() => {
+    initMapboxMap();
+    novaMap?.resize();
+    if (routeKey !== lastRouteKey) {
+      lastRouteKey = routeKey;
+      updateRouteLine();
+    }
+  }, 80);
+}
+
 function showDriverContent(tabName) {
   clearInterval(driverOrdersTimer);
+  clearInterval(driverAcceptedTimer);
   $(".workspace").classList.remove("driver-order-view");
   $("#driverPanel").classList.remove("order-detail-mode");
   $(".content-grid").classList.add("section-mode");
@@ -1308,13 +1440,6 @@ async function showDriverOrderDetails(orderId) {
   const order = state.rideOrders.find((item) => item.id === orderId);
   if (!order) return;
 
-  mapPoints.a = order.a;
-  mapPoints.b = order.b;
-  $("#fromInput").value = order.from;
-  $("#toInput").value = order.to;
-  pickupMarker?.setLngLat(order.a);
-  destinationMarker?.setLngLat(order.b);
-
   $(".content-grid").classList.remove("section-mode");
   $(".workspace").classList.add("driver-order-view");
   $(".map-panel").classList.remove("is-hidden");
@@ -1334,19 +1459,17 @@ async function showDriverOrderDetails(orderId) {
         </div>
       </div>
       ${renderContactButtons(order.passengerPhone || "+380", "client-")}
+      ${renderMapButton(order)}
       <div class="driver-route-preview" id="driverRoutePreview">
         <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
         <span>${Number(order.distanceKm || 0).toFixed(1)} км · ${escapeHtml(order.price)} грн</span>
+        ${renderOrderStops(order)}
         ${order.comment ? `<em>${escapeHtml(order.comment)}</em>` : `<em>Без комментария</em>`}
       </div>
       <button class="primary-action accept-detail-order" data-order="${escapeHtml(order.id)}" type="button">Продолжить</button>
     </div>
   `;
-  window.setTimeout(() => {
-    initMapboxMap();
-    novaMap?.resize();
-    updateRouteLine();
-  }, 80);
+  applyOrderToMap(order);
 }
 
 async function acceptRideOrder(orderId) {
@@ -1374,26 +1497,54 @@ async function acceptRideOrder(orderId) {
 }
 
 function showDriverAcceptedOrder(order) {
+  clearInterval(driverAcceptedTimer);
+  if (order?.id && ["open", "accepted"].includes(order.status)) {
+    driverAcceptedTimer = window.setInterval(() => pollDriverAcceptedOrder(order.id), 1500);
+  }
+
   $(".workspace").classList.add("driver-order-view");
+  $(".content-grid").classList.remove("section-mode");
+  $(".map-panel").classList.remove("is-hidden");
   $("#driverPanel").classList.add("order-detail-mode");
-  $("#screenTitle").textContent = "Предложение отправлено";
+  $("#ridePanel").classList.add("is-hidden");
+  $("#infoPanel").classList.add("is-hidden");
+  $("#driverPanel").classList.remove("is-hidden");
+  $("#screenTitle").textContent = order.status === "accepted" ? "Заказ подтвержден" : "Предложение отправлено";
   $("#driverContent").innerHTML = `
-    <div class="driver-detail-sheet accepted">
-      <div class="accepted-badge">Предложение у клиента</div>
+    <div class="driver-detail-sheet accepted ${order.status === "accepted" ? "confirmed" : ""}">
+      <div class="accepted-badge">${order.status === "accepted" ? "Клиент выбрал вас" : "Предложение у клиента"}</div>
       <div class="client-profile-row">
         <div class="client-avatar">${escapeHtml((order.passengerName || "К").slice(0, 1).toUpperCase())}</div>
         <div>
           <strong>${escapeHtml(order.passengerName || "Клиент")}</strong>
-          <span>Клиент выбирает водителя · рейтинг ${escapeHtml(order.passengerRating || 5)}</span>
+          <span>${order.status === "accepted" ? "Едем к точке A" : "Клиент выбирает водителя"} · рейтинг ${escapeHtml(order.passengerRating || 5)}</span>
         </div>
       </div>
       ${renderContactButtons(order.passengerPhone || "+380", "client-")}
+      ${renderMapButton(order)}
       <div class="driver-route-preview">
         <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
         <span>${Number(order.distanceKm || 0).toFixed(1)} км · ${escapeHtml(order.price)} грн</span>
+        ${renderOrderStops(order)}
       </div>
+      ${order.status === "accepted" ? renderRideChat(order, "driver") : ""}
     </div>
   `;
+  applyOrderToMap(order);
+}
+
+async function pollDriverAcceptedOrder(orderId) {
+  try {
+    const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Заказ не найден.");
+    if (!["open", "accepted"].includes(data.order.status)) {
+      clearInterval(driverAcceptedTimer);
+    }
+    showDriverAcceptedOrder(data.order);
+  } catch {
+    clearInterval(driverAcceptedTimer);
+  }
 }
 
 function saveActiveOrder(order) {
@@ -1414,6 +1565,9 @@ function renderPassengerActiveOrder(order) {
     panel.className = "active-order-panel";
     $("#ridePanel").append(panel);
   }
+  const progress = Math.max(0, Math.min(100, ((Number(order.secondsLeft || 0) / ORDER_SEARCH_SECONDS) * 100).toFixed(2)));
+  panel.style.setProperty("--order-progress", `${progress}%`);
+  panel.className = `active-order-panel ${order.status === "accepted" ? "ride-confirmed" : order.status === "expired" ? "ride-expired" : "offer-toast"}`;
 
   if (order.status === "expired") {
     panel.innerHTML = `
@@ -1437,7 +1591,9 @@ function renderPassengerActiveOrder(order) {
       </div>
       ${renderContactButtons(driver.phone || "+380", "driver-")}
       <div class="driver-live-line"><span></span><strong>Таксист движется по маршруту</strong></div>
+      ${renderRideChat(order, "passenger")}
     `;
+    applyOrderToMap(order);
     showDriverCarOnMap(order);
     return;
   }
@@ -1489,6 +1645,39 @@ async function acceptPassengerOffer(orderId, offerId) {
   }
 }
 
+async function sendRideMessage(orderId, sender) {
+  const input = document.querySelector(`[data-chat-input="${CSS.escape(orderId)}"]`);
+  const text = input?.value.trim();
+  if (!text) return;
+
+  const button = document.querySelector(`.send-ride-message[data-order="${CSS.escape(orderId)}"][data-sender="${CSS.escape(sender)}"]`);
+  if (button) setButtonLoading(button, true, "...");
+
+  try {
+    const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sender,
+        name: sender === "driver" ? state.currentUser?.name || "Водитель NovaRide" : state.currentUser?.name || "Клиент",
+        text,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Не удалось отправить сообщение.");
+    input.value = "";
+    if (sender === "driver") {
+      showDriverAcceptedOrder(data.order);
+    } else {
+      renderPassengerActiveOrder(data.order);
+    }
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    if (button) setButtonLoading(button, false);
+  }
+}
+
 async function pollActiveOrder(orderId) {
   try {
     const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
@@ -1515,8 +1704,10 @@ function restoreActiveOrder() {
 function showDriverCarOnMap(order) {
   if (!novaMap || !order?.a || !order?.b) return;
   const progress = ((Date.now() / 1000) % 30) / 30;
-  const lng = order.a[0] + (order.b[0] - order.a[0]) * progress;
-  const lat = order.a[1] + (order.b[1] - order.a[1]) * progress;
+  const start = Array.isArray(order.driver?.location) ? order.driver.location : [order.a[0] - 0.018, order.a[1] - 0.012];
+  const finish = order.a;
+  const lng = start[0] + (finish[0] - start[0]) * progress;
+  const lat = start[1] + (finish[1] - start[1]) * progress;
   if (!driverCarMarker) {
     driverCarMarker = new mapboxgl.Marker({ element: createDriverMarker() }).setLngLat([lng, lat]).addTo(novaMap);
   } else {
@@ -1554,6 +1745,7 @@ async function createRideOrder() {
         to,
         a: mapPoints.a,
         b: mapPoints.b,
+        stops: mapPoints.stops || [],
         carClass: selectedClass,
         price: state.selectedPrice,
         distanceKm: state.tripDistanceKm,
@@ -1725,6 +1917,7 @@ function initMapboxMap() {
       $("#mapCanvas").classList.remove("loading-real-map");
       localizeMapLabels();
       installRouteLayer();
+      renderStopMarkers();
 
       updateRouteLine();
     });
@@ -1767,6 +1960,19 @@ function bindEvents() {
     const offerButton = event.target.closest(".choose-offer");
     if (offerButton) {
       acceptPassengerOffer(offerButton.dataset.order, offerButton.dataset.offer);
+      return;
+    }
+
+    const chatButton = event.target.closest(".send-ride-message");
+    if (chatButton) {
+      sendRideMessage(chatButton.dataset.order, chatButton.dataset.sender);
+    }
+  });
+  $("#ridePanel").addEventListener("keydown", (event) => {
+    const input = event.target.closest("[data-chat-input]");
+    if (input && event.key === "Enter") {
+      event.preventDefault();
+      sendRideMessage(input.dataset.chatInput, "passenger");
     }
   });
   $("#addStopBtn").addEventListener("click", addStop);
@@ -1802,8 +2008,21 @@ function bindEvents() {
       return;
     }
 
+    const chatButton = event.target.closest(".send-ride-message");
+    if (chatButton) {
+      sendRideMessage(chatButton.dataset.order, chatButton.dataset.sender);
+      return;
+    }
+
     if (event.target.closest(".back-to-feed")) {
       showDriverContent("feed");
+    }
+  });
+  $("#driverPanel").addEventListener("keydown", (event) => {
+    const input = event.target.closest("[data-chat-input]");
+    if (input && event.key === "Enter") {
+      event.preventDefault();
+      sendRideMessage(input.dataset.chatInput, "driver");
     }
   });
   $("#infoPanel").addEventListener("click", (event) => {

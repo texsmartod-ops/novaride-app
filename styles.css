@@ -1162,6 +1162,18 @@ input:focus {
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32), 0 0 0 7px rgba(124, 60, 255, 0.16);
 }
 
+.mapbox-marker.stop {
+  width: 24px;
+  height: 24px;
+  border-width: 2px;
+  background: linear-gradient(145deg, #00b894, #35d4ff);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.26), 0 0 0 6px rgba(0, 184, 148, 0.14);
+}
+
+.mapbox-marker.stop span {
+  font-size: 0.72rem;
+}
+
 .locate-me-btn {
   position: absolute;
   right: 18px;
@@ -2280,10 +2292,16 @@ input:focus {
 .driver-tabs {
   position: relative;
   z-index: 2;
+  order: 2;
   border: 1px solid rgba(29, 103, 255, 0.16);
   border-radius: 8px;
   padding: 6px;
   background: rgba(255, 255, 255, 0.72);
+}
+
+.driver-panel {
+  display: flex;
+  flex-direction: column;
 }
 
 .driver-feed {
@@ -2471,14 +2489,39 @@ input:focus {
 }
 
 .driver-content {
+  order: 1;
   margin-top: 16px;
+  flex: 1;
 }
 
 .bid-row {
   display: grid;
-  grid-template-columns: minmax(74px, 0.7fr) minmax(112px, 1fr) minmax(112px, 1fr);
+  grid-template-columns: minmax(78px, 0.8fr) repeat(2, minmax(112px, 1fr));
   gap: 10px;
   align-items: stretch;
+}
+
+.client-price-badge,
+.order-stops {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.client-price-badge strong {
+  color: var(--blue);
+}
+
+.order-stops span {
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(53, 212, 255, 0.12);
+  color: var(--midnight);
+  font-size: 0.86rem;
 }
 
 .bid-row input,
@@ -2512,7 +2555,44 @@ input:focus {
 }
 
 .active-order-panel {
-  margin-top: 14px;
+  position: fixed;
+  top: 92px;
+  left: max(18px, calc(50% - 250px));
+  width: min(500px, calc(100vw - 36px));
+  z-index: 75;
+  margin-top: 0;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(18px);
+}
+
+.active-order-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: var(--order-progress, 100%);
+  height: 4px;
+  background: linear-gradient(90deg, var(--blue), var(--cyan), #7c3cff);
+  transition: width 240ms linear;
+}
+
+.active-order-panel.offer-toast {
+  box-shadow: 0 28px 80px rgba(7, 23, 47, 0.24);
+}
+
+.active-order-panel.offer-toast::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: rgba(7, 23, 47, 0.16);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+.active-order-panel.ride-confirmed {
+  top: 84px;
+}
 }
 
 .client-profile-row {
@@ -2614,6 +2694,68 @@ input:focus {
   background: rgba(255, 255, 255, 0.78);
 }
 
+.ride-chat {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid rgba(29, 103, 255, 0.12);
+  padding-top: 12px;
+}
+
+.ride-chat-log {
+  display: grid;
+  gap: 8px;
+  max-height: 178px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.ride-message {
+  justify-self: start;
+  max-width: 88%;
+  border-radius: 8px;
+  padding: 9px 11px;
+  background: rgba(7, 23, 47, 0.06);
+  color: var(--ink);
+}
+
+.ride-message.mine {
+  justify-self: end;
+  background: linear-gradient(135deg, var(--blue), #35d4ff);
+  color: #fff;
+}
+
+.ride-message.system {
+  justify-self: stretch;
+  text-align: center;
+  color: var(--muted);
+  background: rgba(53, 212, 255, 0.1);
+}
+
+.ride-message strong,
+.ride-message span {
+  display: block;
+}
+
+.ride-message strong {
+  font-size: 0.76rem;
+  opacity: 0.78;
+  margin-bottom: 2px;
+}
+
+.ride-chat-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.ride-chat-compose input {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  min-height: 44px;
+}
+
 .offer-card > strong {
   color: var(--blue);
   font-size: 1.12rem;
@@ -2652,6 +2794,17 @@ input:focus {
 }
 
 @media (max-width: 520px) {
+  .active-order-panel {
+    top: 74px;
+    left: 12px;
+    width: calc(100vw - 24px);
+    padding: 14px;
+  }
+
+  .ride-chat-compose {
+    grid-template-columns: 1fr;
+  }
+
   .driver-order-card {
     grid-template-columns: 38px minmax(0, 1fr);
     padding: 14px;
@@ -2668,6 +2821,11 @@ input:focus {
   }
 
   .bid-row input {
+    grid-column: 1 / -1;
+  }
+
+  .client-price-badge,
+  .order-stops {
     grid-column: 1 / -1;
   }
 }
@@ -2756,6 +2914,36 @@ body.dark .map-class-strip .class-card {
 
 body.dark .map-class-strip .class-card.is-selected {
   background: linear-gradient(145deg, #0c6da8, #06486f);
+}
+
+body.dark .active-order-panel,
+body.dark .driver-detail-sheet {
+  background: rgba(10, 22, 44, 0.9);
+  border-color: rgba(53, 212, 255, 0.22);
+}
+
+body.dark .offer-card,
+body.dark .driver-empty-card {
+  background: rgba(13, 29, 57, 0.82);
+}
+
+body.dark .ride-message {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+body.dark .ride-message.mine {
+  background: linear-gradient(135deg, #1d67ff, #35d4ff);
+}
+
+body.dark .ride-chat-compose input {
+  background: rgba(7, 23, 47, 0.92);
+  border-color: rgba(53, 212, 255, 0.22);
+  color: #f8fbff;
+}
+
+body.dark .order-stops span {
+  background: rgba(53, 212, 255, 0.14);
+  color: #dff8ff;
 }
 
 body.dark .comment-card textarea,
