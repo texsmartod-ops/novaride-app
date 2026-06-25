@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NovaRide</title>
     <link href="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.css" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css?v=20260625-003" />
+    <link rel="stylesheet" href="/styles.css?v=20260625-004" />
   </head>
   <body>
     <main class="app-shell">
@@ -211,6 +211,9 @@
                   <strong>Odessa live map</strong>
                   <span>12 водителей рядом</span>
                 </div>
+                <button class="locate-me-btn" id="locateMeBtn" type="button" aria-label="Определить мою геолокацию">
+                  <span></span>
+                </button>
                 <div class="map-class-strip" id="classGrid">
                   <button class="class-panel-handle" id="classPanelHandle" type="button" aria-label="Скрыть классы"></button>
                   <button class="class-card is-selected" data-price="150" data-class-name="Эконом">
@@ -316,6 +319,6 @@
     </main>
 
     <script src="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.js"></script>
-    <script src="/app.js?v=20260625-003"></script>
+    <script src="/app.js?v=20260625-004"></script>
   </body>
 </html>

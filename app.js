@@ -27,6 +27,7 @@ const state = {
 const PRICE_PER_KM = 15;
 const PENDING_AUTH_KEY = "novaride_pending_auth";
 const VERIFIED_AUTH_KEY = "novaride_verified_auth";
+const PERSISTENT_AUTH_KEY = "novaride_persistent_auth";
 
 let MAPBOX_TOKEN = "";
 const ODESSA_CENTER = [30.7233, 46.4825];
@@ -34,6 +35,7 @@ let novaMap;
 let activeMapPoint = "a";
 let pickupMarker;
 let destinationMarker;
+let userLocationMarker;
 let mapPoints = {
   a: [30.7326, 46.4858],
   b: [30.7597, 46.4304],
@@ -269,6 +271,40 @@ function clearPendingAuth() {
   localStorage.removeItem(VERIFIED_AUTH_KEY);
 }
 
+function savePersistentAuth(user = state.currentUser) {
+  if (!state.authSessionToken || !user) return;
+
+  localStorage.setItem(
+    PERSISTENT_AUTH_KEY,
+    JSON.stringify({
+      token: state.authSessionToken,
+      destination: state.authDestination || user.destination || "",
+      mode: user.channel === "email" ? "email" : "phone",
+      user,
+    }),
+  );
+}
+
+function clearPersistentAuth() {
+  localStorage.removeItem(PERSISTENT_AUTH_KEY);
+}
+
+function restorePersistentAuth() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PERSISTENT_AUTH_KEY) || "null");
+    if (!saved?.token || !saved?.user) return false;
+
+    state.authSessionToken = saved.token;
+    state.authDestination = saved.destination || saved.user.destination || "";
+    state.authMode = saved.mode === "email" ? "email" : "phone";
+    enterApp(saved.user, { persist: false });
+    return true;
+  } catch {
+    clearPersistentAuth();
+    return false;
+  }
+}
+
 function restorePendingAuthToken() {
   if (state.authSessionToken) return state.authSessionToken;
 
@@ -480,6 +516,7 @@ async function handleSocialCredential(provider, credential, name = "") {
     }
 
     state.authSessionToken = data.sessionToken || "";
+    savePersistentAuth(data.user);
     enterApp(data.user);
   } catch (error) {
     alert(error.message);
@@ -585,6 +622,7 @@ async function verifyCode() {
 
     if (state.authFlow === "login" && data.user) {
       clearPendingAuth();
+      savePersistentAuth(data.user);
       enterApp(data.user);
       return;
     }
@@ -623,10 +661,13 @@ function fillProfileForm(user) {
   }
 }
 
-function enterApp(userOrName) {
+function enterApp(userOrName, options = {}) {
   const user = typeof userOrName === "string" ? { name: userOrName, rating: 4.92 } : userOrName || { name: "Клиент", rating: 4.92 };
   const name = user.name || "Клиент";
   state.currentUser = user;
+  if (user.destination) {
+    state.authDestination = user.destination;
+  }
 
   if (Array.isArray(user.savedAddresses) && user.savedAddresses.length) {
     state.savedAddresses = user.savedAddresses;
@@ -637,6 +678,9 @@ function enterApp(userOrName) {
   $(".profile-card span").textContent = `Рейтинг ${user.rating || 4.92}`;
   $("#authScreen").classList.add("is-hidden");
   $("#taxiScreen").classList.remove("is-hidden");
+  if (options.persist !== false) {
+    savePersistentAuth(user);
+  }
   updateMenuForRole();
   window.setTimeout(() => {
     initMapboxMap();
@@ -698,6 +742,7 @@ async function finishAuth(event) {
     }
 
     clearPendingAuth();
+    savePersistentAuth(data.user);
     enterApp(data.user);
   } catch (error) {
     alert(error.message);
@@ -1107,6 +1152,7 @@ async function leaveAccount(kind) {
 
   playScreenTransition(() => {
     clearPendingAuth();
+    clearPersistentAuth();
     state.authSessionToken = "";
     state.authDestination = "";
     state.currentUser = null;
@@ -1283,6 +1329,42 @@ function createDriverMarker() {
   return marker;
 }
 
+function createUserLocationMarker() {
+  const marker = document.createElement("div");
+  marker.className = "user-location-marker";
+  marker.innerHTML = "<span></span>";
+  return marker;
+}
+
+function setPickupToUserLocation(coordinates) {
+  mapPoints.a = coordinates;
+  pickupMarker?.setLngLat(coordinates);
+
+  if (novaMap && !userLocationMarker) {
+    userLocationMarker = new mapboxgl.Marker({ element: createUserLocationMarker() }).setLngLat(coordinates).addTo(novaMap);
+  } else {
+    userLocationMarker?.setLngLat(coordinates);
+  }
+
+  activeMapPoint = "b";
+  reverseGeocodePoint("a", coordinates);
+  updateRouteLine();
+  novaMap?.flyTo({ center: coordinates, zoom: 15, pitch: 42, duration: 900 });
+}
+
+function requestUserLocation() {
+  if (!navigator.geolocation) {
+    alert("Геолокация не поддерживается этим браузером.");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => setPickupToUserLocation([position.coords.longitude, position.coords.latitude]),
+    () => alert("Разрешите доступ к геолокации, чтобы NovaRide выбрал вашу точку посадки."),
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+  );
+}
+
 function initMapboxMap() {
   if (novaMap || !window.mapboxgl || !$("#realMap")) {
     return;
@@ -1307,6 +1389,14 @@ function initMapboxMap() {
     });
 
     novaMap.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
+    const geolocateControl = new mapboxgl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: false,
+      showAccuracyCircle: false,
+      showUserHeading: true,
+    });
+    novaMap.addControl(geolocateControl, "bottom-right");
+    geolocateControl.on("geolocate", (event) => setPickupToUserLocation([event.coords.longitude, event.coords.latitude]));
 
     const route = [mapPoints.a, [30.7413, 46.4738], [30.7516, 46.4544], mapPoints.b];
 
@@ -1405,6 +1495,7 @@ function bindEvents() {
     }),
   );
   $$(".map-pin").forEach((pin) => pin.addEventListener("click", () => placePoint(pin.dataset.point)));
+  $("#locateMeBtn")?.addEventListener("click", requestUserLocation);
   $$(".menu-item").forEach((item) => item.addEventListener("click", () => showSection(item.dataset.section)));
   $("#menuToggle").addEventListener("click", (event) => {
     event.stopPropagation();
@@ -1474,7 +1565,9 @@ function bindEvents() {
 bindEvents();
 setAuthStep("start");
 loadAuthConfig();
-restorePendingAuth();
+if (!restorePersistentAuth()) {
+  restorePendingAuth();
+}
 
 function bindClassPanelGestures() {
   const panel = $("#classGrid");
