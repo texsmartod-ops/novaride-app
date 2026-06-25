@@ -1327,8 +1327,9 @@ function placePoint(point) {
 
 function createMapMarker(label, className) {
   const marker = document.createElement("div");
-  marker.className = `mapbox-marker mapbox-marker-hidden ${className}`;
-  marker.setAttribute("aria-hidden", "true");
+  marker.className = `mapbox-marker ${className}`;
+  marker.innerHTML = `<span>${label}</span>`;
+  marker.setAttribute("aria-label", `Точка ${label}`);
   return marker;
 }
 
