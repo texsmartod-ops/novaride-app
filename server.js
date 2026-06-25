@@ -159,6 +159,7 @@ async function ensurePostgres() {
         id TEXT PRIMARY KEY,
         user_id TEXT,
         passenger_name TEXT NOT NULL,
+        passenger_phone TEXT DEFAULT '',
         passenger_rating NUMERIC DEFAULT 5,
         from_address TEXT NOT NULL,
         to_address TEXT NOT NULL,
@@ -171,8 +172,24 @@ async function ensurePostgres() {
         distance_km NUMERIC DEFAULT 0,
         comment TEXT DEFAULT '',
         status TEXT NOT NULL DEFAULT 'open',
+        driver_name TEXT DEFAULT '',
+        driver_phone TEXT DEFAULT '',
+        driver_rating NUMERIC DEFAULT 4.86,
+        driver_avatar TEXT DEFAULT '',
+        driver_lng NUMERIC,
+        driver_lat NUMERIC,
+        accepted_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
+      );
+
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_name TEXT DEFAULT '';
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS passenger_phone TEXT DEFAULT '';
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_phone TEXT DEFAULT '';
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_rating NUMERIC DEFAULT 4.86;
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_avatar TEXT DEFAULT '';
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_lng NUMERIC;
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_lat NUMERIC;
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ;
     `);
   }
 
@@ -327,6 +344,7 @@ function orderFromRow(row) {
     id: row.id,
     userId: row.user_id,
     passengerName: row.passenger_name,
+    passengerPhone: row.passenger_phone || "",
     passengerRating: Number(row.passenger_rating || 5),
     from: row.from_address,
     to: row.to_address,
@@ -337,6 +355,16 @@ function orderFromRow(row) {
     distanceKm: Number(row.distance_km || 0),
     comment: row.comment || "",
     status: row.status,
+    driver: row.driver_name
+      ? {
+          name: row.driver_name,
+          phone: row.driver_phone || "",
+          rating: Number(row.driver_rating || 4.86),
+          avatar: row.driver_avatar || "",
+          location: row.driver_lng && row.driver_lat ? [Number(row.driver_lng), Number(row.driver_lat)] : null,
+        }
+      : null,
+    acceptedAt: row.accepted_at instanceof Date ? row.accepted_at.toISOString() : row.accepted_at,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
   };
 }
@@ -347,6 +375,7 @@ function publicOrder(order) {
   return {
     id: order.id,
     passengerName: order.passengerName,
+    passengerPhone: order.passengerPhone || "",
     passengerRating: order.passengerRating || 5,
     from: order.from,
     to: order.to,
@@ -357,6 +386,8 @@ function publicOrder(order) {
     distanceKm: order.distanceKm,
     comment: order.comment || "",
     status: order.status,
+    driver: order.driver || null,
+    acceptedAt: order.acceptedAt,
     createdAt: order.createdAt,
   };
 }
@@ -613,6 +644,7 @@ async function createRideOrder(destination, payload) {
     id: createId(),
     userId: user.id,
     passengerName: user.name || "Клиент",
+    passengerPhone: user.destination && user.destination.startsWith("+") ? user.destination : "",
     passengerRating: user.rating || 5,
     from,
     to,
@@ -632,9 +664,9 @@ async function createRideOrder(destination, payload) {
       `
         INSERT INTO ride_orders (
           id, user_id, passenger_name, passenger_rating, from_address, to_address,
-          from_lng, from_lat, to_lng, to_lat, car_class, price, distance_km, comment, status, created_at
+          passenger_phone, from_lng, from_lat, to_lng, to_lat, car_class, price, distance_km, comment, status, created_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         RETURNING *
       `,
       [
@@ -644,6 +676,7 @@ async function createRideOrder(destination, payload) {
         order.passengerRating,
         order.from,
         order.to,
+        order.passengerPhone,
         order.a[0],
         order.a[1],
         order.b[0],
@@ -677,6 +710,80 @@ async function listOpenRideOrders() {
     .filter((order) => order.status === "open")
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
     .slice(0, 100);
+}
+
+async function findRideOrderById(orderId) {
+  const id = String(orderId || "").trim();
+  if (!id) return null;
+
+  const pool = await ensurePostgres();
+  if (pool) {
+    const result = await pool.query("SELECT * FROM ride_orders WHERE id = $1 LIMIT 1", [id]);
+    return orderFromRow(result.rows[0]);
+  }
+
+  return readOrders().find((order) => order.id === id) || null;
+}
+
+async function acceptRideOrder(orderId, payload) {
+  const order = await findRideOrderById(orderId);
+  if (!order) {
+    throw new Error("Заказ не найден.");
+  }
+
+  if (order.status !== "open") {
+    throw new Error("Этот заказ уже принят другим водителем.");
+  }
+
+  const now = new Date().toISOString();
+  const driver = {
+    name: String(payload.driverName || "Водитель NovaRide").trim(),
+    phone: String(payload.driverPhone || "").trim(),
+    rating: Number(payload.driverRating || 4.86),
+    avatar: String(payload.driverAvatar || "").trim(),
+    location: Array.isArray(payload.driverLocation) ? payload.driverLocation.map(Number) : order.a,
+  };
+
+  const pool = await ensurePostgres();
+  if (pool) {
+    const result = await pool.query(
+      `
+        UPDATE ride_orders SET
+          status = 'accepted',
+          driver_name = $2,
+          driver_phone = $3,
+          driver_rating = $4,
+          driver_avatar = $5,
+          driver_lng = $6,
+          driver_lat = $7,
+          accepted_at = $8
+        WHERE id = $1 AND status = 'open'
+        RETURNING *
+      `,
+      [order.id, driver.name, driver.phone, driver.rating, driver.avatar, driver.location[0], driver.location[1], now],
+    );
+
+    if (!result.rows[0]) {
+      throw new Error("Этот заказ уже принят другим водителем.");
+    }
+
+    return orderFromRow(result.rows[0]);
+  }
+
+  const orders = readOrders();
+  const index = orders.findIndex((item) => item.id === order.id);
+  if (index < 0 || orders[index].status !== "open") {
+    throw new Error("Этот заказ уже принят другим водителем.");
+  }
+
+  orders[index] = {
+    ...orders[index],
+    status: "accepted",
+    driver,
+    acceptedAt: now,
+  };
+  writeOrders(orders);
+  return orders[index];
 }
 
 async function deliverCode({ channel, destination, code }) {
@@ -1323,6 +1430,31 @@ async function handleListRideOrders(req, res) {
   }
 }
 
+async function handleGetRideOrder(req, res, orderId) {
+  try {
+    const order = await findRideOrderById(orderId);
+
+    if (!order) {
+      sendJson(res, 404, { ok: false, error: "Заказ не найден." });
+      return;
+    }
+
+    sendJson(res, 200, { ok: true, order: publicOrder(order) });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось загрузить заказ." });
+  }
+}
+
+async function handleAcceptRideOrder(req, res, orderId) {
+  try {
+    const body = await readJson(req);
+    const order = await acceptRideOrder(orderId, body);
+    sendJson(res, 200, { ok: true, order: publicOrder(order) });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось принять заказ." });
+  }
+}
+
 async function handleDeleteAccount(req, res) {
   try {
     const body = await readJson(req);
@@ -1420,6 +1552,18 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "POST" && req.url === "/api/users/addresses") {
     handleSaveAddresses(req, res);
+    return;
+  }
+
+  const orderAcceptMatch = req.url.match(/^\/api\/orders\/([^/]+)\/accept$/);
+  if (req.method === "POST" && orderAcceptMatch) {
+    handleAcceptRideOrder(req, res, decodeURIComponent(orderAcceptMatch[1]));
+    return;
+  }
+
+  const orderMatch = req.url.match(/^\/api\/orders\/([^/?]+)$/);
+  if (req.method === "GET" && orderMatch) {
+    handleGetRideOrder(req, res, decodeURIComponent(orderMatch[1]));
     return;
   }
 

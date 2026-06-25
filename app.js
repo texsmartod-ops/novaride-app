@@ -29,6 +29,7 @@ const PRICE_PER_KM = 15;
 const PENDING_AUTH_KEY = "novaride_pending_auth";
 const VERIFIED_AUTH_KEY = "novaride_verified_auth";
 const PERSISTENT_AUTH_KEY = "novaride_persistent_auth";
+const ACTIVE_ORDER_KEY = "novaride_active_order";
 
 let MAPBOX_TOKEN = "";
 const ODESSA_CENTER = [30.7233, 46.4825];
@@ -44,6 +45,8 @@ let mapPoints = {
 let addressSearchTimer;
 let accountCheckTimer;
 let driverOrdersTimer;
+let activeOrderTimer;
+let driverCarMarker;
 
 const ODESSA_PLACES = [
   { name: "Дерибасовская 1", subtitle: "Центр Одессы", aliases: ["дерибасовская"], center: [30.7355, 46.4846] },
@@ -670,6 +673,7 @@ function enterApp(userOrName, options = {}) {
     initMapboxMap();
     novaMap?.resize();
     updateRouteLine();
+    restoreActiveOrder();
   }, 80);
 }
 
@@ -873,6 +877,9 @@ async function updateRouteLine() {
   if (!novaMap || !mapPoints.a || !mapPoints.b) return;
 
   const directRoute = [mapPoints.a, mapPoints.b];
+  const detailPadding = $(".workspace")?.classList.contains("driver-order-view")
+    ? { top: 92, right: 70, bottom: 92, left: 70 }
+    : { top: 120, right: 460, bottom: 180, left: 80 };
 
   try {
     const coordinates = `${mapPoints.a.join(",")};${mapPoints.b.join(",")}`;
@@ -886,13 +893,13 @@ async function updateRouteLine() {
     updateTripPrice(distanceKm);
 
     const bounds = route.reduce((box, coord) => box.extend(coord), new mapboxgl.LngLatBounds(route[0], route[0]));
-    novaMap.fitBounds(bounds, { padding: { top: 120, right: 460, bottom: 180, left: 80 }, maxZoom: 14.5, duration: 700 });
+    novaMap.fitBounds(bounds, { padding: detailPadding, maxZoom: 14.5, duration: 700 });
   } catch {
     setRouteGeoJson(directRoute);
     updateTripPrice(getDirectDistanceKm(mapPoints.a, mapPoints.b));
 
     const bounds = directRoute.reduce((box, coord) => box.extend(coord), new mapboxgl.LngLatBounds(directRoute[0], directRoute[0]));
-    novaMap.fitBounds(bounds, { padding: { top: 120, right: 460, bottom: 180, left: 80 }, maxZoom: 14.5, duration: 700 });
+    novaMap.fitBounds(bounds, { padding: detailPadding, maxZoom: 14.5, duration: 700 });
   }
 }
 
@@ -1164,6 +1171,8 @@ async function leaveAccount(kind) {
 
 function showSection(section) {
   clearInterval(driverOrdersTimer);
+  $(".workspace").classList.remove("driver-order-view");
+  $("#driverPanel").classList.remove("order-detail-mode");
   state.currentSection = section;
   const isDriverFeed = state.driverMode && section === "ride";
   $(".content-grid").classList.toggle("section-mode", section !== "ride" || isDriverFeed);
@@ -1224,7 +1233,7 @@ function renderDriverOrders(orders) {
           <div class="bid-row">
             <input value="${escapeHtml(order.price || state.selectedPrice)}" aria-label="Ваша цена" />
             <button class="mini-action order-detail" data-order="${escapeHtml(order.id)}" type="button">Подробнее</button>
-            <button class="primary-action" type="button">Продолжить</button>
+            <button class="primary-action order-accept" data-order="${escapeHtml(order.id)}" type="button">Продолжить</button>
           </div>
         </article>
       `,
@@ -1251,8 +1260,34 @@ async function loadDriverOrders() {
   }
 }
 
+function getDriverProfilePayload() {
+  const name = state.currentUser?.name || "Водитель NovaRide";
+  const destination = state.currentUser?.destination || "";
+  const phone = destination.startsWith("+") ? destination : "+380";
+
+  return {
+    driverName: name,
+    driverPhone: phone,
+    driverRating: 4.86,
+    driverAvatar: name.slice(0, 1).toUpperCase(),
+    driverLocation: mapPoints.a,
+  };
+}
+
+function renderContactButtons(phone, prefix = "") {
+  const safePhone = String(phone || "").replace(/\s+/g, "");
+  return `
+    <div class="${prefix}contact-actions">
+      <a class="round-contact" href="tel:${escapeHtml(safePhone || "+380")}"><span class="phone-mini-icon"></span>Позвонить</a>
+      <button class="round-contact" type="button"><span class="chat-mini-icon"></span>Чат</button>
+    </div>
+  `;
+}
+
 function showDriverContent(tabName) {
   clearInterval(driverOrdersTimer);
+  $(".workspace").classList.remove("driver-order-view");
+  $("#driverPanel").classList.remove("order-detail-mode");
   $(".content-grid").classList.add("section-mode");
   $(".map-panel").classList.add("is-hidden");
   $("#ridePanel").classList.add("is-hidden");
@@ -1281,31 +1316,164 @@ async function showDriverOrderDetails(orderId) {
   destinationMarker?.setLngLat(order.b);
 
   $(".content-grid").classList.remove("section-mode");
+  $(".workspace").classList.add("driver-order-view");
   $(".map-panel").classList.remove("is-hidden");
   $("#ridePanel").classList.add("is-hidden");
   $("#infoPanel").classList.add("is-hidden");
   $("#driverPanel").classList.remove("is-hidden");
+  $("#driverPanel").classList.add("order-detail-mode");
+  $("#screenTitle").textContent = "Детали заказа";
+  $("#driverContent").innerHTML = `
+    <div class="driver-detail-sheet">
+      <button class="mini-action back-to-feed" type="button">Назад к ленте</button>
+      <div class="client-profile-row">
+        <div class="client-avatar">${escapeHtml((order.passengerName || "К").slice(0, 1).toUpperCase())}</div>
+        <div>
+          <strong>${escapeHtml(order.passengerName || "Клиент")}</strong>
+          <span>Рейтинг ${escapeHtml(order.passengerRating || 5)} · ${escapeHtml(order.carClass)}</span>
+        </div>
+      </div>
+      ${renderContactButtons(order.passengerPhone || "+380", "client-")}
+      <div class="driver-route-preview" id="driverRoutePreview">
+        <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
+        <span>${Number(order.distanceKm || 0).toFixed(1)} км · ${escapeHtml(order.price)} грн</span>
+        ${order.comment ? `<em>${escapeHtml(order.comment)}</em>` : `<em>Без комментария</em>`}
+      </div>
+      <button class="primary-action accept-detail-order" data-order="${escapeHtml(order.id)}" type="button">Продолжить</button>
+    </div>
+  `;
   window.setTimeout(() => {
     initMapboxMap();
     novaMap?.resize();
     updateRouteLine();
   }, 80);
+}
 
-  const preview = $("#driverRoutePreview");
-  if (preview) {
-    preview.innerHTML = `
-      <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
-      <span>${escapeHtml(order.carClass)} · ${escapeHtml(order.passengerName)} · рейтинг ${escapeHtml(order.passengerRating || 5)}</span>
-      <em id="driverDistanceLabel">Маршрут строится...</em>
-    `;
+async function acceptRideOrder(orderId) {
+  const button = document.querySelector(`[data-order="${CSS.escape(orderId)}"].order-accept, [data-order="${CSS.escape(orderId)}"].accept-detail-order`);
+  if (button) setButtonLoading(button, true, "Подтверждаем...");
+
+  try {
+    const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}/accept`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(getDriverProfilePayload()),
+    });
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "Не удалось принять заказ.");
+    }
+
+    state.rideOrders = state.rideOrders.filter((order) => order.id !== orderId);
+    showDriverAcceptedOrder(data.order);
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    if (button) setButtonLoading(button, false);
+  }
+}
+
+function showDriverAcceptedOrder(order) {
+  $(".workspace").classList.add("driver-order-view");
+  $("#driverPanel").classList.add("order-detail-mode");
+  $("#screenTitle").textContent = "Заказ подтвержден";
+  $("#driverContent").innerHTML = `
+    <div class="driver-detail-sheet accepted">
+      <div class="accepted-badge">Заказ принят</div>
+      <div class="client-profile-row">
+        <div class="client-avatar">${escapeHtml((order.passengerName || "К").slice(0, 1).toUpperCase())}</div>
+        <div>
+          <strong>${escapeHtml(order.passengerName || "Клиент")}</strong>
+          <span>Рейтинг ${escapeHtml(order.passengerRating || 5)}</span>
+        </div>
+      </div>
+      ${renderContactButtons(order.passengerPhone || "+380", "client-")}
+      <div class="driver-route-preview">
+        <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
+        <span>${Number(order.distanceKm || 0).toFixed(1)} км · ${escapeHtml(order.price)} грн</span>
+      </div>
+    </div>
+  `;
+}
+
+function saveActiveOrder(order) {
+  if (!order?.id) return;
+  localStorage.setItem(ACTIVE_ORDER_KEY, order.id);
+}
+
+function clearActiveOrder() {
+  localStorage.removeItem(ACTIVE_ORDER_KEY);
+  clearInterval(activeOrderTimer);
+}
+
+function renderPassengerActiveOrder(order) {
+  let panel = $("#activeOrderPanel");
+  if (!panel) {
+    panel = document.createElement("section");
+    panel.id = "activeOrderPanel";
+    panel.className = "active-order-panel";
+    $("#ridePanel").append(panel);
   }
 
-  window.setTimeout(() => {
-    const label = $("#driverDistanceLabel");
-    if (label) {
-      label.textContent = `${state.tripDistanceKm.toFixed(1)} км · ориентир ${state.selectedPrice} грн`;
-    }
-  }, 1200);
+  if (order.status === "accepted" && order.driver) {
+    const driver = order.driver;
+    panel.innerHTML = `
+      <div class="accepted-badge">Водитель едет к вам</div>
+      <div class="client-profile-row driver-profile-row">
+        <div class="client-avatar">${escapeHtml(driver.avatar || driver.name.slice(0, 1).toUpperCase())}</div>
+        <div>
+          <strong>${escapeHtml(driver.name)}</strong>
+          <span>Рейтинг ${escapeHtml(driver.rating || 4.86)} · NovaRide driver</span>
+        </div>
+      </div>
+      ${renderContactButtons(driver.phone || "+380", "driver-")}
+      <div class="driver-live-line"><span></span><strong>Таксист движется по маршруту</strong></div>
+    `;
+    showDriverCarOnMap(order);
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="accepted-badge waiting">Заказ в ленте водителей</div>
+    <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
+    <span>Ждем, когда водитель нажмет "Продолжить".</span>
+  `;
+}
+
+async function pollActiveOrder(orderId) {
+  try {
+    const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Заказ не найден.");
+    renderPassengerActiveOrder(data.order);
+  } catch {
+    clearActiveOrder();
+  }
+}
+
+function startActiveOrderPolling(orderId) {
+  if (!orderId) return;
+  clearInterval(activeOrderTimer);
+  pollActiveOrder(orderId);
+  activeOrderTimer = window.setInterval(() => pollActiveOrder(orderId), 4000);
+}
+
+function restoreActiveOrder() {
+  const orderId = localStorage.getItem(ACTIVE_ORDER_KEY);
+  if (orderId) startActiveOrderPolling(orderId);
+}
+
+function showDriverCarOnMap(order) {
+  if (!novaMap || !order?.a || !order?.b) return;
+  const progress = ((Date.now() / 1000) % 30) / 30;
+  const lng = order.a[0] + (order.b[0] - order.a[0]) * progress;
+  const lat = order.a[1] + (order.b[1] - order.a[1]) * progress;
+  if (!driverCarMarker) {
+    driverCarMarker = new mapboxgl.Marker({ element: createDriverMarker() }).setLngLat([lng, lat]).addTo(novaMap);
+  } else {
+    driverCarMarker.setLngLat([lng, lat]);
+  }
 }
 
 async function createRideOrder() {
@@ -1350,6 +1518,9 @@ async function createRideOrder() {
     }
 
     created = true;
+    saveActiveOrder(data.order);
+    renderPassengerActiveOrder(data.order);
+    startActiveOrderPolling(data.order.id);
   } catch (error) {
     alert(error.message);
   } finally {
@@ -1567,6 +1738,17 @@ function bindEvents() {
     const detailButton = event.target.closest(".order-detail");
     if (detailButton) {
       showDriverOrderDetails(detailButton.dataset.order);
+      return;
+    }
+
+    const acceptButton = event.target.closest(".order-accept, .accept-detail-order");
+    if (acceptButton) {
+      acceptRideOrder(acceptButton.dataset.order);
+      return;
+    }
+
+    if (event.target.closest(".back-to-feed")) {
+      showDriverContent("feed");
     }
   });
   $("#infoPanel").addEventListener("click", (event) => {
