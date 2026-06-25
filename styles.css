@@ -2886,7 +2886,7 @@ input:focus {
   position: relative;
   z-index: 3;
   margin-top: 14px;
-  overflow: hidden;
+  overflow: visible;
   background: rgba(255, 255, 255, 0.86);
   backdrop-filter: blur(18px);
 }
@@ -3037,6 +3037,8 @@ input:focus {
   gap: 10px;
   border-top: 1px solid rgba(29, 103, 255, 0.12);
   padding-top: 12px;
+  min-width: 0;
+  width: 100%;
 }
 
 .ride-chat-log {
@@ -3045,6 +3047,7 @@ input:focus {
   max-height: 178px;
   overflow: auto;
   padding-right: 4px;
+  min-width: 0;
 }
 
 .ride-message {
@@ -3064,6 +3067,9 @@ input:focus {
 
 .ride-message.system {
   justify-self: stretch;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
   text-align: center;
   color: var(--muted);
   background: rgba(53, 212, 255, 0.1);
@@ -3082,16 +3088,27 @@ input:focus {
 
 .ride-chat-compose {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+  min-width: 0;
+  width: 100%;
 }
 
 .ride-chat-compose input {
   min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0 12px;
-  min-height: 44px;
+  min-height: 56px;
+  font-size: 16px;
+}
+
+.ride-chat-compose .primary-action {
+  width: 100%;
+  min-height: 56px;
+  justify-content: center;
 }
 
 .offer-card > strong {

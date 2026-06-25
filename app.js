@@ -54,6 +54,7 @@ let activeOrderTimer;
 let driverAcceptedTimer;
 let driverCarMarker;
 let lastRouteKey = "";
+let rideChatActiveUntil = 0;
 
 const ODESSA_PLACES = [
   { name: "Дерибасовская 1", subtitle: "Центр Одессы", aliases: ["дерибасовская"], center: [30.7355, 46.4846] },
@@ -1532,7 +1533,12 @@ function focusRideChat(button) {
 
 function isRideChatFocused(orderId) {
   const active = document.activeElement;
-  return Boolean(active?.matches?.("[data-chat-input]") && (!orderId || active.dataset.chatInput === orderId));
+  const hasFocusedInput = Boolean(active?.matches?.("[data-chat-input]") && (!orderId || active.dataset.chatInput === orderId));
+  return hasFocusedInput || Date.now() < rideChatActiveUntil;
+}
+
+function markRideChatActive() {
+  rideChatActiveUntil = Date.now() + 8000;
 }
 
 function applyOrderToMap(order) {
@@ -1878,6 +1884,7 @@ async function sendRideMessage(orderId, sender) {
   const input = document.querySelector(`[data-chat-input="${CSS.escape(orderId)}"]`);
   const text = input?.value.trim();
   if (!text) return;
+  markRideChatActive();
 
   const button = document.querySelector(`.send-ride-message[data-order="${CSS.escape(orderId)}"][data-sender="${CSS.escape(sender)}"]`);
   if (button) setButtonLoading(button, true, "...");
@@ -2252,6 +2259,11 @@ function bindEvents() {
       sendRideMessage(input.dataset.chatInput, "passenger");
     }
   });
+  ["pointerdown", "focusin", "input"].forEach((eventName) => {
+    $("#ridePanel").addEventListener(eventName, (event) => {
+      if (event.target.closest("[data-chat-input]")) markRideChatActive();
+    });
+  });
   $("#addStopBtn").addEventListener("click", addStop);
   $$(".class-card").forEach((card) => card.addEventListener("click", () => selectClass(card)));
   bindClassPanelGestures();
@@ -2333,6 +2345,11 @@ function bindEvents() {
       event.preventDefault();
       sendRideMessage(input.dataset.chatInput, "driver");
     }
+  });
+  ["pointerdown", "focusin", "input"].forEach((eventName) => {
+    $("#driverPanel").addEventListener(eventName, (event) => {
+      if (event.target.closest("[data-chat-input]")) markRideChatActive();
+    });
   });
   $("#infoPanel").addEventListener("click", (event) => {
     const actionTarget = event.target.closest("[data-action]");
