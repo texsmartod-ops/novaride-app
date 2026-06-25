@@ -32,6 +32,9 @@ const PENDING_AUTH_KEY = "novaride_pending_auth";
 const VERIFIED_AUTH_KEY = "novaride_verified_auth";
 const PERSISTENT_AUTH_KEY = "novaride_persistent_auth";
 const ACTIVE_ORDER_KEY = "novaride_active_order";
+const DRIVER_ACTIVE_ORDER_KEY = "novaride_driver_active_order";
+const DRIVER_DETAIL_ORDER_KEY = "novaride_driver_detail_order";
+const DRIVER_TAB_KEY = "novaride_driver_tab";
 const ORDER_SEARCH_SECONDS = 40;
 
 let MAPBOX_TOKEN = "";
@@ -681,7 +684,9 @@ function enterApp(userOrName, options = {}) {
     initMapboxMap();
     novaMap?.resize();
     updateRouteLine();
-    restoreActiveOrder();
+    restoreDriverView().then((restoredDriver) => {
+      if (!restoredDriver) restoreActiveOrder();
+    });
   }, 80);
 }
 
@@ -1283,6 +1288,9 @@ function showDriverMode() {
 
 function showPassengerMode() {
   state.driverMode = false;
+  localStorage.removeItem(DRIVER_ACTIVE_ORDER_KEY);
+  localStorage.removeItem(DRIVER_DETAIL_ORDER_KEY);
+  localStorage.removeItem(DRIVER_TAB_KEY);
   updateMenuForRole();
   showSection("ride");
 }
@@ -1439,6 +1447,9 @@ function showDriverReturnToFeedNotice({ title, text, className = "" }) {
   clearInterval(driverOrdersTimer);
   driverAcceptedTimer = null;
   driverOrdersTimer = null;
+  localStorage.removeItem(DRIVER_ACTIVE_ORDER_KEY);
+  localStorage.removeItem(DRIVER_DETAIL_ORDER_KEY);
+  localStorage.setItem(DRIVER_TAB_KEY, "feed");
   $(".workspace").classList.remove("driver-order-view");
   $(".content-grid").classList.add("section-mode");
   $(".map-panel").classList.add("is-hidden");
@@ -1523,11 +1534,15 @@ function renderRideChat(order, sender) {
 }
 
 function focusRideChat(button) {
+  markRideChatActive();
   const scope = button.closest(".active-order-panel, .driver-detail-sheet") || document;
   const input = scope.querySelector("[data-chat-input]");
   if (input) {
     input.scrollIntoView({ block: "center", behavior: "smooth" });
-    window.setTimeout(() => input.focus(), 220);
+    window.setTimeout(() => {
+      markRideChatActive();
+      input.focus({ preventScroll: true });
+    }, 80);
   }
 }
 
@@ -1563,6 +1578,11 @@ function applyOrderToMap(order) {
 }
 
 function showDriverContent(tabName) {
+  localStorage.setItem(DRIVER_TAB_KEY, tabName);
+  if (tabName === "feed") {
+    localStorage.removeItem(DRIVER_ACTIVE_ORDER_KEY);
+    localStorage.removeItem(DRIVER_DETAIL_ORDER_KEY);
+  }
   clearInterval(driverOrdersTimer);
   clearInterval(driverAcceptedTimer);
   $(".workspace").classList.remove("driver-order-view");
@@ -1586,6 +1606,9 @@ function showDriverContent(tabName) {
 async function showDriverOrderDetails(orderId) {
   const order = state.rideOrders.find((item) => item.id === orderId);
   if (!order) return;
+  localStorage.setItem(DRIVER_DETAIL_ORDER_KEY, orderId);
+  localStorage.removeItem(DRIVER_ACTIVE_ORDER_KEY);
+  localStorage.setItem(DRIVER_TAB_KEY, "feed");
 
   $(".content-grid").classList.remove("section-mode");
   $(".workspace").classList.add("driver-order-view");
@@ -1652,6 +1675,11 @@ async function acceptRideOrder(orderId) {
 function showDriverAcceptedOrder(order, options = {}) {
   const shouldPoll = options.poll !== false;
   const shouldSyncMap = options.syncMap !== false;
+  if (order?.id) {
+    localStorage.setItem(DRIVER_ACTIVE_ORDER_KEY, order.id);
+    localStorage.removeItem(DRIVER_DETAIL_ORDER_KEY);
+    localStorage.setItem(DRIVER_TAB_KEY, "feed");
+  }
   if (shouldPoll && order?.id && ["open", "accepted"].includes(order.status) && !driverAcceptedTimer) {
     driverAcceptedTimer = window.setInterval(() => pollDriverAcceptedOrder(order.id), 1500);
   }
@@ -1930,6 +1958,8 @@ async function cancelRideOrder(orderId, sender) {
     if (sender === "driver") {
       clearInterval(driverAcceptedTimer);
       driverAcceptedTimer = null;
+      localStorage.removeItem(DRIVER_ACTIVE_ORDER_KEY);
+      localStorage.removeItem(DRIVER_DETAIL_ORDER_KEY);
       showDriverContent("feed");
     } else {
       renderPassengerActiveOrder(data.order);
@@ -1965,6 +1995,53 @@ function startActiveOrderPolling(orderId) {
 function restoreActiveOrder() {
   const orderId = localStorage.getItem(ACTIVE_ORDER_KEY);
   if (orderId) startActiveOrderPolling(orderId);
+}
+
+async function restoreDriverView() {
+  const driverOrderId = localStorage.getItem(DRIVER_ACTIVE_ORDER_KEY);
+  if (driverOrderId) {
+    try {
+      const response = await fetch(`/api/orders/${encodeURIComponent(driverOrderId)}`);
+      const data = await response.json();
+      if (response.ok && data.ok && ["open", "accepted"].includes(data.order.status)) {
+        state.driverMode = true;
+        updateMenuForRole();
+        showDriverAcceptedOrder(data.order);
+        return true;
+      }
+    } catch {
+      // If the order can no longer be restored, fall back to the saved driver tab.
+    }
+    localStorage.removeItem(DRIVER_ACTIVE_ORDER_KEY);
+  }
+
+  const driverDetailOrderId = localStorage.getItem(DRIVER_DETAIL_ORDER_KEY);
+  if (driverDetailOrderId) {
+    try {
+      const response = await fetch(`/api/orders/${encodeURIComponent(driverDetailOrderId)}`);
+      const data = await response.json();
+      if (response.ok && data.ok && data.order.status === "open") {
+        state.driverMode = true;
+        state.rideOrders = [data.order, ...state.rideOrders.filter((order) => order.id !== data.order.id)];
+        updateMenuForRole();
+        showDriverOrderDetails(data.order.id);
+        return true;
+      }
+    } catch {
+      // If details cannot be restored, fall back to the saved driver tab.
+    }
+    localStorage.removeItem(DRIVER_DETAIL_ORDER_KEY);
+  }
+
+  const savedTab = localStorage.getItem(DRIVER_TAB_KEY);
+  if (savedTab && ["feed", "stats", "wallet"].includes(savedTab)) {
+    state.driverMode = true;
+    updateMenuForRole();
+    showDriverContent(savedTab);
+    return true;
+  }
+
+  return false;
 }
 
 function showDriverCarOnMap(order) {
@@ -2259,10 +2336,10 @@ function bindEvents() {
       sendRideMessage(input.dataset.chatInput, "passenger");
     }
   });
-  ["pointerdown", "focusin", "input"].forEach((eventName) => {
+  ["pointerdown", "touchstart", "focusin", "input"].forEach((eventName) => {
     $("#ridePanel").addEventListener(eventName, (event) => {
       if (event.target.closest("[data-chat-input]")) markRideChatActive();
-    });
+    }, true);
   });
   $("#addStopBtn").addEventListener("click", addStop);
   $$(".class-card").forEach((card) => card.addEventListener("click", () => selectClass(card)));
@@ -2346,10 +2423,10 @@ function bindEvents() {
       sendRideMessage(input.dataset.chatInput, "driver");
     }
   });
-  ["pointerdown", "focusin", "input"].forEach((eventName) => {
+  ["pointerdown", "touchstart", "focusin", "input"].forEach((eventName) => {
     $("#driverPanel").addEventListener(eventName, (event) => {
       if (event.target.closest("[data-chat-input]")) markRideChatActive();
-    });
+    }, true);
   });
   $("#infoPanel").addEventListener("click", (event) => {
     const actionTarget = event.target.closest("[data-action]");
