@@ -925,6 +925,41 @@ async function acceptRideOffer(orderId, offerId) {
   return orders[index];
 }
 
+async function declineRideOffer(orderId, offerId) {
+  const order = await findRideOrderById(orderId);
+  if (!order) {
+    throw new Error("Заказ не найден.");
+  }
+
+  if (order.status !== "open") {
+    throw new Error(order.status === "expired" ? "Время поиска истекло." : "Этот заказ уже завершен.");
+  }
+
+  const offers = (order.offers || []).filter((item) => item.id !== offerId);
+
+  const pool = await ensurePostgres();
+  if (pool) {
+    const result = await pool.query(
+      "UPDATE ride_orders SET offers = $2::jsonb WHERE id = $1 AND status = 'open' RETURNING *",
+      [order.id, JSON.stringify(offers)],
+    );
+    return orderFromRow(result.rows[0]) || { ...order, offers };
+  }
+
+  const orders = readOrders();
+  const index = orders.findIndex((item) => item.id === order.id);
+  if (index < 0 || orders[index].status !== "open") {
+    throw new Error("Этот заказ уже завершен.");
+  }
+
+  orders[index] = {
+    ...orders[index],
+    offers,
+  };
+  writeOrders(orders);
+  return orders[index];
+}
+
 async function appendRideMessage(orderId, payload) {
   const order = await findRideOrderById(orderId);
   if (!order) {
@@ -1794,6 +1829,16 @@ async function handleAcceptRideOffer(req, res, orderId) {
   }
 }
 
+async function handleDeclineRideOffer(req, res, orderId) {
+  try {
+    const body = await readJson(req);
+    const order = await declineRideOffer(orderId, String(body.offerId || ""));
+    sendJson(res, 200, { ok: true, order: publicOrder(order) });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось отклонить предложение." });
+  }
+}
+
 async function handleRideMessage(req, res, orderId) {
   try {
     const body = await readJson(req);
@@ -1928,6 +1973,12 @@ const server = http.createServer((req, res) => {
   const orderChooseMatch = req.url.match(/^\/api\/orders\/([^/]+)\/accept-offer$/);
   if (req.method === "POST" && orderChooseMatch) {
     handleAcceptRideOffer(req, res, decodeURIComponent(orderChooseMatch[1]));
+    return;
+  }
+
+  const orderDeclineOfferMatch = req.url.match(/^\/api\/orders\/([^/]+)\/decline-offer$/);
+  if (req.method === "POST" && orderDeclineOfferMatch) {
+    handleDeclineRideOffer(req, res, decodeURIComponent(orderDeclineOfferMatch[1]));
     return;
   }
 

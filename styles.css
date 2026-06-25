@@ -2614,6 +2614,25 @@ input:focus {
   color: var(--ink);
 }
 
+.driver-status-toast {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  border: 1px solid rgba(201, 50, 50, 0.18);
+  border-radius: 8px;
+  padding: 13px 14px;
+  background: linear-gradient(135deg, rgba(255, 122, 122, 0.12), rgba(255, 255, 255, 0.86));
+  color: #c93232;
+  box-shadow: 0 14px 34px rgba(201, 50, 50, 0.08);
+  animation: toastIn 260ms ease both;
+}
+
+.driver-status-toast span {
+  color: var(--muted);
+  font-weight: 800;
+  line-height: 1.35;
+}
+
 .metric-card strong,
 .wallet-card strong {
   color: var(--blue);
@@ -3283,6 +3302,12 @@ body.dark .driver-empty-card {
   background: rgba(13, 29, 57, 0.82);
 }
 
+body.dark .driver-status-toast {
+  border-color: rgba(255, 122, 122, 0.24);
+  background: linear-gradient(135deg, rgba(116, 31, 42, 0.72), rgba(13, 29, 57, 0.82));
+  color: #ffb8bd;
+}
+
 body.dark .driver-feed {
   border-color: rgba(53, 212, 255, 0.18);
   background: rgba(5, 14, 30, 0.92);
@@ -3393,6 +3418,18 @@ body.dark .street,
 body.dark .companion-bubble {
   background: rgba(12, 29, 56, 0.82);
   color: var(--ink);
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes authWindowIn {

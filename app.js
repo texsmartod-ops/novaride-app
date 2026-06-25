@@ -1428,6 +1428,37 @@ function renderContactButtons(phone, prefix = "") {
   `;
 }
 
+function hasCurrentDriverOffer(order) {
+  const phone = getDriverProfilePayload().driverPhone;
+  return (order?.offers || []).some((offer) => offer.driver?.phone === phone);
+}
+
+function showDriverOfferDeclined() {
+  clearInterval(driverAcceptedTimer);
+  clearInterval(driverOrdersTimer);
+  driverAcceptedTimer = null;
+  driverOrdersTimer = null;
+  $(".workspace").classList.remove("driver-order-view");
+  $(".content-grid").classList.add("section-mode");
+  $(".map-panel").classList.add("is-hidden");
+  $("#ridePanel").classList.add("is-hidden");
+  $("#infoPanel").classList.add("is-hidden");
+  $("#driverPanel").classList.remove("is-hidden");
+  $("#driverPanel").classList.remove("order-detail-mode");
+  $("#screenTitle").textContent = "Лента";
+  $("#driverContent").innerHTML = `
+    ${driverTabs.feed}
+    <div class="driver-status-toast declined-offer-toast">
+      <strong>Ваше предложение отклонено</strong>
+      <span>Заказ снова скрыт из ожидания. Можно выбрать другую поездку из ленты.</span>
+    </div>
+  `;
+  $$(".driver-tab").forEach((tab) => tab.classList.toggle("is-active", tab.dataset.driverTab === "feed"));
+  loadDriverOrders();
+  driverOrdersTimer = window.setInterval(loadDriverOrders, 5000);
+  window.setTimeout(() => $(".declined-offer-toast")?.remove(), 5200);
+}
+
 function renderMapButton(order, target = "pickup") {
   const point = target === "destination" ? order?.b : order?.a;
   const fallback = target === "destination" ? order?.to : order?.from;
@@ -1641,6 +1672,10 @@ async function pollDriverAcceptedOrder(orderId) {
     const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error || "Заказ не найден.");
+    if (data.order.status === "open" && !hasCurrentDriverOffer(data.order)) {
+      showDriverOfferDeclined();
+      return;
+    }
     if (!["open", "accepted"].includes(data.order.status)) {
       clearInterval(driverAcceptedTimer);
       driverAcceptedTimer = null;
@@ -1742,7 +1777,7 @@ function renderPassengerActiveOrder(order) {
               </div>
               <strong>${escapeHtml(offer.price)} грн</strong>
               <div class="offer-actions">
-                <button class="offer-action-button is-secondary decline-offer" data-offer="${escapeHtml(offer.id)}" type="button">Отклонить</button>
+                <button class="offer-action-button is-secondary decline-offer" data-order="${escapeHtml(order.id)}" data-offer="${escapeHtml(offer.id)}" type="button">Отклонить</button>
                 <button class="offer-action-button is-primary choose-offer" data-order="${escapeHtml(order.id)}" data-offer="${escapeHtml(offer.id)}" type="button">Выбрать</button>
               </div>
             </article>
@@ -1754,11 +1789,28 @@ function renderPassengerActiveOrder(order) {
   `;
 }
 
-function declinePassengerOffer(offerId) {
+async function declinePassengerOffer(orderId, offerId) {
   const panel = $("#activeOrderPanel");
-  const orderId = panel?.querySelector(".choose-offer")?.dataset.order || localStorage.getItem(ACTIVE_ORDER_KEY);
-  if (!orderId) return;
-  state.declinedOffers[orderId] = [...(state.declinedOffers[orderId] || []), offerId];
+  const currentOrderId = orderId || panel?.querySelector(".choose-offer")?.dataset.order || localStorage.getItem(ACTIVE_ORDER_KEY);
+  if (!currentOrderId) return;
+  const button = document.querySelector(`.decline-offer[data-offer="${CSS.escape(offerId)}"]`);
+  if (button) setButtonLoading(button, true, "...");
+
+  try {
+    const response = await fetch(`/api/orders/${encodeURIComponent(currentOrderId)}/decline-offer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ offerId }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Не удалось отклонить предложение.");
+  } catch (error) {
+    alert(error.message);
+    if (button) setButtonLoading(button, false);
+    return;
+  }
+
+  state.declinedOffers[currentOrderId] = [...(state.declinedOffers[currentOrderId] || []), offerId];
   const card = document.querySelector(`.decline-offer[data-offer="${CSS.escape(offerId)}"]`)?.closest(".offer-card");
   card?.remove();
   if (!document.querySelector(".offer-card")) {
@@ -2140,7 +2192,7 @@ function bindEvents() {
 
     const declineButton = event.target.closest(".decline-offer");
     if (declineButton) {
-      declinePassengerOffer(declineButton.dataset.offer);
+      declinePassengerOffer(declineButton.dataset.order, declineButton.dataset.offer);
       return;
     }
 
