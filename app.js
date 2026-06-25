@@ -15,6 +15,7 @@ const state = {
   currentSection: "ride",
   driverMode: false,
   rideOrders: [],
+  hiddenDriverOrders: [],
   declinedOffers: {},
   language: "ru",
   distanceUnit: "km",
@@ -163,7 +164,7 @@ const sections = {
 
 const driverTabs = {
   feed: `
-    <div class="section-hero driver-hero compact"><span>Режим водителя</span><h2>Лента заказов</h2></div>
+    <div class="section-hero driver-hero compact driver-line-hero"><span>Режим водителя</span><h2>Заказы</h2><em>На линии</em></div>
     <div class="driver-feed" id="driverFeed"><article class="driver-empty-card">Загружаем реальные заказы...</article></div>
     <div class="driver-route-preview" id="driverRoutePreview"></div>
   `,
@@ -1286,20 +1287,34 @@ function showPassengerMode() {
 }
 
 function renderDriverOrders(orders) {
-  if (!orders.length) {
+  const visibleOrders = orders.filter((order) => !state.hiddenDriverOrders.includes(order.id));
+
+  if (!visibleOrders.length) {
     return `<article class="driver-empty-card"><strong>Пока нет заказов</strong><span>Когда пассажир нажмет "Найти водителя", заказ появится здесь онлайн.</span></article>`;
   }
 
-  return orders
+  return visibleOrders
     .map(
       (order) => `
-        <article class="driver-order-card">
-          <i></i>
-          <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
-          <span>${escapeHtml(order.carClass)} · ${Number(order.distanceKm || 0).toFixed(1)} км · рейтинг ${escapeHtml(order.passengerRating || 5)}</span>
-          ${renderOrderStops(order)}
-          ${order.comment ? `<em>${escapeHtml(order.comment)}</em>` : ""}
-          <div class="client-price-badge">Цена клиента: <strong>${escapeHtml(order.price || state.selectedPrice)} грн</strong></div>
+        <article class="driver-order-card" data-order-card="${escapeHtml(order.id)}">
+          <div class="driver-swipe-hint">Скрыть</div>
+          <div class="driver-client-side">
+            <div class="driver-client-avatar">${escapeHtml((order.passengerName || "К").slice(0, 1).toUpperCase())}</div>
+            <strong>${escapeHtml(order.passengerName || "Клиент")}</strong>
+            <span>★ ${escapeHtml(order.passengerRating || 5)}</span>
+            <em>${escapeHtml(order.carClass)}</em>
+          </div>
+          <div class="driver-order-main">
+            <div class="driver-order-topline">
+              <span>~${Number(order.distanceKm || 0).toFixed(1)} км</span>
+              <strong>${escapeHtml(order.price || state.selectedPrice)} грн</strong>
+              <button class="order-hide-button" data-order-hide="${escapeHtml(order.id)}" type="button" aria-label="Скрыть заказ">⋮</button>
+            </div>
+            <h3>${escapeHtml(order.from)}</h3>
+            <p>${escapeHtml(order.to)}</p>
+            ${renderOrderStops(order)}
+            ${order.comment ? `<em>${escapeHtml(order.comment)}</em>` : ""}
+          </div>
           <div class="bid-row">
             <button class="mini-action order-detail" data-order="${escapeHtml(order.id)}" type="button">Подробнее</button>
             <button class="primary-action order-accept" data-order="${escapeHtml(order.id)}" type="button">Продолжить</button>
@@ -1324,9 +1339,67 @@ async function loadDriverOrders() {
 
     state.rideOrders = data.orders || [];
     feed.innerHTML = renderDriverOrders(state.rideOrders);
+    bindDriverFeedInteractions();
   } catch (error) {
     feed.innerHTML = `<article class="driver-empty-card"><strong>Заказы не загрузились</strong><span>${escapeHtml(error.message)}</span></article>`;
   }
+}
+
+function hideDriverOrder(orderId) {
+  if (!orderId || state.hiddenDriverOrders.includes(orderId)) return;
+  state.hiddenDriverOrders.push(orderId);
+  const card = document.querySelector(`[data-order-card="${CSS.escape(orderId)}"]`);
+  if (card) {
+    card.classList.add("is-dismissing");
+    window.setTimeout(() => {
+      const feed = $("#driverFeed");
+      if (feed) feed.innerHTML = renderDriverOrders(state.rideOrders);
+    }, 220);
+  }
+}
+
+function bindDriverOrderSwipe(card) {
+  if (!card || card.dataset.swipeBound) return;
+  card.dataset.swipeBound = "true";
+  let startX = 0;
+  let currentX = 0;
+  let swiping = false;
+
+  card.addEventListener("pointerdown", (event) => {
+    if (event.target.closest("button, a, input")) return;
+    startX = event.clientX;
+    currentX = 0;
+    swiping = true;
+    card.setPointerCapture?.(event.pointerId);
+  });
+
+  card.addEventListener("pointermove", (event) => {
+    if (!swiping) return;
+    currentX = Math.max(0, Math.min(120, event.clientX - startX));
+    card.style.transform = `translateX(${currentX}px)`;
+    card.classList.toggle("is-swiping", currentX > 18);
+  });
+
+  card.addEventListener("pointerup", () => {
+    if (!swiping) return;
+    swiping = false;
+    const orderId = card.dataset.orderCard;
+    card.style.transform = "";
+    card.classList.remove("is-swiping");
+    if (currentX > 72) {
+      hideDriverOrder(orderId);
+    }
+  });
+
+  card.addEventListener("pointercancel", () => {
+    swiping = false;
+    card.style.transform = "";
+    card.classList.remove("is-swiping");
+  });
+}
+
+function bindDriverFeedInteractions() {
+  $$("#driverFeed [data-order-card]").forEach(bindDriverOrderSwipe);
 }
 
 function getDriverProfilePayload() {
@@ -2094,6 +2167,12 @@ function bindEvents() {
     const openChatButton = event.target.closest(".open-chat");
     if (openChatButton) {
       focusRideChat(openChatButton);
+      return;
+    }
+
+    const hideButton = event.target.closest(".order-hide-button");
+    if (hideButton) {
+      hideDriverOrder(hideButton.dataset.orderHide);
       return;
     }
 
