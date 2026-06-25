@@ -1296,12 +1296,12 @@ function renderDriverOrders(orders) {
   return visibleOrders
     .map(
       (order) => `
-        <article class="driver-order-card" data-order-card="${escapeHtml(order.id)}">
+        <article class="driver-order-card" data-order-card="${escapeHtml(order.id)}" data-open-order="${escapeHtml(order.id)}" role="button" tabindex="0">
           <div class="driver-swipe-hint">Скрыть</div>
           <div class="driver-client-side">
-            <div class="driver-client-avatar">${escapeHtml((order.passengerName || "К").slice(0, 1).toUpperCase())}</div>
-            <strong>${escapeHtml(order.passengerName || "Клиент")}</strong>
-            <span>★ ${escapeHtml(order.passengerRating || 5)}</span>
+            <div class="driver-client-avatar">NR</div>
+            <strong>Клиент</strong>
+            <span>Скрыто</span>
             <em>${escapeHtml(order.carClass)}</em>
           </div>
           <div class="driver-order-main">
@@ -1314,10 +1314,6 @@ function renderDriverOrders(orders) {
             <p>${escapeHtml(order.to)}</p>
             ${renderOrderStops(order)}
             ${order.comment ? `<em>${escapeHtml(order.comment)}</em>` : ""}
-          </div>
-          <div class="bid-row">
-            <button class="mini-action order-detail" data-order="${escapeHtml(order.id)}" type="button">Подробнее</button>
-            <button class="primary-action order-accept" data-order="${escapeHtml(order.id)}" type="button">Продолжить</button>
           </div>
         </article>
       `,
@@ -1384,6 +1380,12 @@ function bindDriverOrderSwipe(card) {
     if (!swiping) return;
     swiping = false;
     const orderId = card.dataset.orderCard;
+    if (currentX > 8) {
+      card.dataset.ignoreClick = "true";
+      window.setTimeout(() => {
+        delete card.dataset.ignoreClick;
+      }, 260);
+    }
     card.style.transform = "";
     card.classList.remove("is-swiping");
     if (currentX > 72) {
@@ -1533,36 +1535,42 @@ async function showDriverOrderDetails(orderId) {
   $("#driverContent").innerHTML = `
     <div class="driver-detail-sheet">
       <button class="mini-action back-to-feed" type="button">Назад к ленте</button>
-      <div class="client-profile-row">
-        <div class="client-avatar">${escapeHtml((order.passengerName || "К").slice(0, 1).toUpperCase())}</div>
-        <div>
-          <strong>${escapeHtml(order.passengerName || "Клиент")}</strong>
-          <span>Рейтинг ${escapeHtml(order.passengerRating || 5)} · ${escapeHtml(order.carClass)}</span>
-        </div>
+      <div class="driver-private-note">
+        <strong>Данные клиента скрыты</strong>
+        <span>Имя, телефон, рейтинг и чат откроются после того, как клиент выберет ваше предложение.</span>
       </div>
-      ${renderContactButtons(order.passengerPhone || "+380", "client-")}
-      ${renderMapButton(order)}
       <div class="driver-route-preview" id="driverRoutePreview">
         <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
-        <span>${Number(order.distanceKm || 0).toFixed(1)} км · ${escapeHtml(order.price)} грн</span>
+        <span>${Number(order.distanceKm || 0).toFixed(1)} км · цена клиента ${escapeHtml(order.price)} грн</span>
         ${renderOrderStops(order)}
         ${order.comment ? `<em>${escapeHtml(order.comment)}</em>` : `<em>Без комментария</em>`}
       </div>
-      <button class="primary-action accept-detail-order" data-order="${escapeHtml(order.id)}" type="button">Продолжить</button>
+      <label class="bid-offer-field">
+        <span>Ваше предложение</span>
+        <input type="number" min="1" value="${escapeHtml(order.price || state.selectedPrice)}" data-bid-price="${escapeHtml(order.id)}" inputmode="numeric" />
+        <em>Клиент увидит вашу цену и сможет выбрать вас.</em>
+      </label>
+      <button class="primary-action accept-detail-order" data-order="${escapeHtml(order.id)}" type="button">Отправить предложение</button>
     </div>
   `;
   applyOrderToMap(order);
 }
 
 async function acceptRideOrder(orderId) {
-  const button = document.querySelector(`[data-order="${CSS.escape(orderId)}"].order-accept, [data-order="${CSS.escape(orderId)}"].accept-detail-order`);
+  const button = document.querySelector(`[data-order="${CSS.escape(orderId)}"].accept-detail-order`);
   if (button) setButtonLoading(button, true, "Отправляем...");
+  const bidInput = document.querySelector(`[data-bid-price="${CSS.escape(orderId)}"]`);
+  const bidPrice = Number(bidInput?.value || 0);
+  const order = state.rideOrders.find((item) => item.id === orderId);
 
   try {
     const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}/accept`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(getDriverProfilePayload()),
+      body: JSON.stringify({
+        ...getDriverProfilePayload(),
+        price: bidPrice > 0 ? bidPrice : order?.price || state.selectedPrice,
+      }),
     });
     const data = await response.json();
 
@@ -1596,15 +1604,26 @@ function showDriverAcceptedOrder(order, options = {}) {
   $("#driverContent").innerHTML = `
     <div class="driver-detail-sheet accepted ${order.status === "accepted" ? "confirmed" : ""}">
       <div class="accepted-badge">${order.status === "accepted" ? "Клиент выбрал вас" : "Предложение у клиента"}</div>
-      <div class="client-profile-row">
-        <div class="client-avatar">${escapeHtml((order.passengerName || "К").slice(0, 1).toUpperCase())}</div>
-        <div>
-          <strong>${escapeHtml(order.passengerName || "Клиент")}</strong>
-          <span>${order.status === "accepted" ? "Едем к точке A" : "Клиент выбирает водителя"} · рейтинг ${escapeHtml(order.passengerRating || 5)}</span>
-        </div>
-      </div>
-      ${renderContactButtons(order.passengerPhone || "+380", "client-")}
-      ${renderMapButton(order)}
+      ${
+        order.status === "accepted"
+          ? `
+            <div class="client-profile-row">
+              <div class="client-avatar">${escapeHtml((order.passengerName || "К").slice(0, 1).toUpperCase())}</div>
+              <div>
+                <strong>${escapeHtml(order.passengerName || "Клиент")}</strong>
+                <span>Едем к точке A · рейтинг ${escapeHtml(order.passengerRating || 5)}</span>
+              </div>
+            </div>
+            ${renderContactButtons(order.passengerPhone || "+380", "client-")}
+            ${renderMapButton(order)}
+          `
+          : `
+            <div class="driver-private-note">
+              <strong>Ждем подтверждение клиента</strong>
+              <span>Личные данные, телефон и чат откроются только после выбора вашего предложения.</span>
+            </div>
+          `
+      }
       <div class="driver-route-preview">
         <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
         <span>${Number(order.distanceKm || 0).toFixed(1)} км · ${escapeHtml(order.price)} грн</span>
@@ -2176,6 +2195,13 @@ function bindEvents() {
       return;
     }
 
+    const openOrder = event.target.closest("[data-open-order]");
+    if (openOrder) {
+      if (openOrder.dataset.ignoreClick) return;
+      showDriverOrderDetails(openOrder.dataset.openOrder);
+      return;
+    }
+
     const detailButton = event.target.closest(".order-detail");
     if (detailButton) {
       showDriverOrderDetails(detailButton.dataset.order);
@@ -2205,6 +2231,13 @@ function bindEvents() {
     }
   });
   $("#driverPanel").addEventListener("keydown", (event) => {
+    const openOrder = event.target.closest("[data-open-order]");
+    if (openOrder && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      showDriverOrderDetails(openOrder.dataset.openOrder);
+      return;
+    }
+
     const input = event.target.closest("[data-chat-input]");
     if (input && event.key === "Enter") {
       event.preventDefault();
