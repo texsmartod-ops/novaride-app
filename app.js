@@ -1742,8 +1742,8 @@ function renderPassengerActiveOrder(order) {
               </div>
               <strong>${escapeHtml(offer.price)} грн</strong>
               <div class="offer-actions">
-                <button class="ghost-action decline-offer" data-offer="${escapeHtml(offer.id)}" type="button">Отклонить</button>
-                <button class="primary-action choose-offer" data-order="${escapeHtml(order.id)}" data-offer="${escapeHtml(offer.id)}" type="button">Выбрать</button>
+                <button class="offer-action-button is-secondary decline-offer" data-offer="${escapeHtml(offer.id)}" type="button">Отклонить</button>
+                <button class="offer-action-button is-primary choose-offer" data-order="${escapeHtml(order.id)}" data-offer="${escapeHtml(offer.id)}" type="button">Выбрать</button>
               </div>
             </article>
           `,
