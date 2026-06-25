@@ -1152,6 +1152,19 @@ input:focus {
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.38), 0 0 0 8px rgba(53, 212, 255, 0.18);
 }
 
+.mapbox-marker-hidden {
+  width: 1px;
+  height: 1px;
+  border: 0;
+  opacity: 0;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.mapbox-marker-hidden::after {
+  display: none;
+}
+
 .locate-me-btn {
   position: absolute;
   right: 18px;
@@ -1210,16 +1223,16 @@ input:focus {
 
 .driver-map-marker {
   position: relative;
-  width: 28px;
-  height: 18px;
-  border-radius: 9px 12px 5px 5px;
+  width: 30px;
+  height: 19px;
+  border-radius: 10px 13px 5px 5px;
   background:
     radial-gradient(circle at 7px 17px, #07172f 0 3px, transparent 4px),
     radial-gradient(circle at 21px 17px, #07172f 0 3px, transparent 4px),
     linear-gradient(135deg, #fff, #bde8ff 56%, var(--blue));
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.22);
-  transform: rotate(-8deg);
-  opacity: 0.86 !important;
+  box-shadow: 0 7px 15px rgba(0, 0, 0, 0.2), 0 0 0 5px rgba(255, 255, 255, 0.16);
+  transform: rotate(-8deg) translateZ(0);
+  opacity: 0.74 !important;
   pointer-events: none !important;
 }
 
@@ -1711,15 +1724,7 @@ input:focus {
 }
 
 .map-class-strip .class-card em {
-  min-height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  color: rgba(255, 255, 255, 0.82);
-  font-style: normal;
-  font-size: 0.72rem;
-  font-weight: 900;
+  display: none;
 }
 
 .chip-icon,

@@ -662,7 +662,7 @@ function fillProfileForm(user) {
 }
 
 function enterApp(userOrName, options = {}) {
-  const user = typeof userOrName === "string" ? { name: userOrName, rating: 4.92 } : userOrName || { name: "Клиент", rating: 4.92 };
+  const user = typeof userOrName === "string" ? { name: userOrName, rating: 5 } : userOrName || { name: "Клиент", rating: 5 };
   const name = user.name || "Клиент";
   state.currentUser = user;
   if (user.destination) {
@@ -675,7 +675,7 @@ function enterApp(userOrName, options = {}) {
 
   $("#profileName").textContent = name;
   $("#profileAvatar").textContent = name.slice(0, 1).toUpperCase();
-  $(".profile-card span").textContent = `Рейтинг ${user.rating || 4.92}`;
+  $(".profile-card span").textContent = `Рейтинг ${user.rating || 5}`;
   $("#authScreen").classList.add("is-hidden");
   $("#taxiScreen").classList.remove("is-hidden");
   if (options.persist !== false) {
@@ -796,7 +796,10 @@ function getMapLanguage() {
 }
 
 function formatMapboxPlace(feature) {
-  return (feature?.place_name_ru || feature?.place_name_uk || feature?.place_name || "")
+  const streetName = feature?.text_ru || feature?.text_uk || feature?.text || "";
+  const address = feature?.address && streetName ? `${streetName} ${feature.address}` : "";
+  const primary = address || feature?.place_name_ru || feature?.place_name_uk || feature?.place_name || feature?.text_ru || feature?.text_uk || feature?.text || "";
+  return primary
     .replace(/, Odesa Oblast/gi, "")
     .replace(/, Odessa Oblast/gi, "")
     .replace(/, Одесская область/gi, "")
@@ -804,6 +807,10 @@ function formatMapboxPlace(feature) {
     .replace(/, Ukraine/gi, "")
     .replace(/, Україна/gi, "")
     .replace(/, Украина/gi, "")
+    .replace(/, Odesa/gi, "")
+    .replace(/, Odessa/gi, "")
+    .replace(/, Одеса/gi, "")
+    .replace(/, Одесса/gi, "")
     .trim();
 }
 
@@ -814,6 +821,10 @@ function formatSuggestionSubtitle(feature) {
     .filter(Boolean)
     .filter((item) => !/ukraine|украина|україна/i.test(item));
   return pieces.slice(0, 2).join(", ");
+}
+
+function isUsableMapboxFeature(feature) {
+  return Array.isArray(feature?.center) && feature.center.length === 2 && Number(feature.relevance || 1) >= 0.45;
 }
 
 function matchesLocalPlace(place, query) {
@@ -882,7 +893,7 @@ async function updateRouteLine() {
   try {
     const coordinates = `${mapPoints.a.join(",")};${mapPoints.b.join(",")}`;
     const response = await fetch(
-      `https://api.mapbox.com/directions/v5/mapbox/driving/${coordinates}?geometries=geojson&overview=full&access_token=${MAPBOX_TOKEN}`,
+      `https://api.mapbox.com/directions/v5/mapbox/driving/${coordinates}?geometries=geojson&overview=full&steps=false&alternatives=false&language=${getMapLanguage()}&access_token=${MAPBOX_TOKEN}`,
     );
     const data = await response.json();
     const route = data.routes?.[0]?.geometry?.coordinates || directRoute;
@@ -949,10 +960,10 @@ async function geocodeAddress(point, query) {
     }
 
     const response = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cleanQuery}, Одесса`)}.json?limit=1&language=${getMapLanguage()}&country=ua&bbox=30.55,46.32,30.85,46.58&proximity=${ODESSA_CENTER.join(",")}&access_token=${MAPBOX_TOKEN}`,
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cleanQuery}, Одесса, Україна`)}.json?limit=5&language=${getMapLanguage()}&country=ua&bbox=30.55,46.32,30.85,46.58&proximity=${ODESSA_CENTER.join(",")}&types=address,poi,place,locality,neighborhood&access_token=${MAPBOX_TOKEN}`,
     );
     const data = await response.json();
-    const feature = data.features?.[0];
+    const feature = (data.features || []).find(isUsableMapboxFeature);
 
     if (!feature) return;
 
@@ -987,10 +998,10 @@ async function showAddressSuggestions(point, query) {
 
   try {
     const response = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cleanQuery}, Одесса`)}.json?limit=5&language=${getMapLanguage()}&country=ua&bbox=30.55,46.32,30.85,46.58&proximity=${ODESSA_CENTER.join(",")}&access_token=${MAPBOX_TOKEN}`,
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cleanQuery}, Одесса, Україна`)}.json?limit=6&language=${getMapLanguage()}&country=ua&bbox=30.55,46.32,30.85,46.58&proximity=${ODESSA_CENTER.join(",")}&types=address,poi,place,locality,neighborhood&access_token=${MAPBOX_TOKEN}`,
     );
     const data = await response.json();
-    const remote = (data.features || []).map((feature) => ({
+    const remote = (data.features || []).filter(isUsableMapboxFeature).map((feature) => ({
       label: formatMapboxPlace(feature),
       subtitle: formatSuggestionSubtitle(feature),
       center: feature.center,
@@ -1277,7 +1288,7 @@ function updateMenuForRole() {
   historyItem.textContent = state.driverMode ? "Заказы" : "История заказов";
   addressesItem.classList.toggle("is-hidden", state.driverMode);
   $("#driverModeBtn").textContent = state.driverMode ? "Стать пассажиром" : "Стать водителем";
-  $(".profile-card span").textContent = state.driverMode ? "Рейтинг водителя 4.86" : `Рейтинг ${state.currentUser?.rating || 4.92}`;
+  $(".profile-card span").textContent = state.driverMode ? "Рейтинг водителя 4.86" : `Рейтинг ${state.currentUser?.rating || 5}`;
 }
 
 function saveAddress(button) {
@@ -1316,8 +1327,8 @@ function placePoint(point) {
 
 function createMapMarker(label, className) {
   const marker = document.createElement("div");
-  marker.className = `mapbox-marker ${className}`;
-  marker.innerHTML = "<span></span>";
+  marker.className = `mapbox-marker mapbox-marker-hidden ${className}`;
+  marker.setAttribute("aria-hidden", "true");
   return marker;
 }
 
@@ -1400,22 +1411,10 @@ function initMapboxMap() {
 
     const route = [mapPoints.a, [30.7413, 46.4738], [30.7516, 46.4544], mapPoints.b];
 
-    pickupMarker = new mapboxgl.Marker({ element: createMapMarker("A", "pickup"), draggable: true }).setLngLat(mapPoints.a).addTo(novaMap);
-    destinationMarker = new mapboxgl.Marker({ element: createMapMarker("B", "destination"), draggable: true })
+    pickupMarker = new mapboxgl.Marker({ element: createMapMarker("A", "pickup"), draggable: false }).setLngLat(mapPoints.a).addTo(novaMap);
+    destinationMarker = new mapboxgl.Marker({ element: createMapMarker("B", "destination"), draggable: false })
       .setLngLat(mapPoints.b)
       .addTo(novaMap);
-
-    pickupMarker.on("dragend", () => {
-      mapPoints.a = pickupMarker.getLngLat().toArray();
-      reverseGeocodePoint("a", mapPoints.a);
-      updateRouteLine();
-    });
-
-    destinationMarker.on("dragend", () => {
-      mapPoints.b = destinationMarker.getLngLat().toArray();
-      reverseGeocodePoint("b", mapPoints.b);
-      updateRouteLine();
-    });
 
     [
       [30.7206, 46.492],
