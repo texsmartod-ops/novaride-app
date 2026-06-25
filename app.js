@@ -1530,6 +1530,11 @@ function focusRideChat(button) {
   }
 }
 
+function isRideChatFocused(orderId) {
+  const active = document.activeElement;
+  return Boolean(active?.matches?.("[data-chat-input]") && (!orderId || active.dataset.chatInput === orderId));
+}
+
 function applyOrderToMap(order) {
   if (!order?.a || !order?.b) return;
   const routeKey = JSON.stringify([order.a, order.stops || [], order.b]);
@@ -1699,6 +1704,9 @@ async function pollDriverAcceptedOrder(orderId) {
     }
     if (data.order.status === "canceled") {
       showDriverOrderCanceled(data.order);
+      return;
+    }
+    if (data.order.status === "accepted" && isRideChatFocused(orderId)) {
       return;
     }
     if (!["open", "accepted"].includes(data.order.status)) {
@@ -1931,6 +1939,9 @@ async function pollActiveOrder(orderId) {
     const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error || "Заказ не найден.");
+    if (data.order.status === "accepted" && isRideChatFocused(orderId)) {
+      return;
+    }
     renderPassengerActiveOrder(data.order);
   } catch {
     clearActiveOrder();
