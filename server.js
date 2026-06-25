@@ -187,6 +187,15 @@ async function ensurePostgres() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS ride_messages (
+        id TEXT PRIMARY KEY,
+        order_id TEXT NOT NULL,
+        sender TEXT NOT NULL,
+        sender_name TEXT NOT NULL,
+        message_text TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_name TEXT DEFAULT '';
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS passenger_phone TEXT DEFAULT '';
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS stops JSONB DEFAULT '[]'::jsonb;
@@ -760,6 +769,20 @@ async function listOpenRideOrders() {
     .slice(0, 100);
 }
 
+async function listAdminRideOrders() {
+  const pool = await ensurePostgres();
+
+  if (pool) {
+    const result = await pool.query("SELECT * FROM ride_orders ORDER BY created_at DESC LIMIT 200");
+    return result.rows.map(orderFromRow);
+  }
+
+  return readOrders()
+    .slice()
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .slice(0, 200);
+}
+
 async function findRideOrderById(orderId) {
   const id = String(orderId || "").trim();
   if (!id) return null;
@@ -925,6 +948,10 @@ async function appendRideMessage(orderId, payload) {
   const pool = await ensurePostgres();
   if (pool) {
     const result = await pool.query("UPDATE ride_orders SET messages = $2::jsonb WHERE id = $1 RETURNING *", [order.id, JSON.stringify(messages)]);
+    await pool.query(
+      "INSERT INTO ride_messages (id, order_id, sender, sender_name, message_text, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
+      [message.id, order.id, message.sender, message.name, message.text, message.createdAt],
+    );
     return orderFromRow(result.rows[0]);
   }
 
@@ -967,6 +994,10 @@ async function cancelRideOrder(orderId, payload = {}) {
     const result = await pool.query(
       "UPDATE ride_orders SET status = 'canceled', messages = $2::jsonb WHERE id = $1 AND status IN ('open', 'accepted') RETURNING *",
       [order.id, JSON.stringify(messages)],
+    );
+    await pool.query(
+      "INSERT INTO ride_messages (id, order_id, sender, sender_name, message_text, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
+      [message.id, order.id, message.sender, message.name, message.text, message.createdAt],
     );
     return orderFromRow(result.rows[0]);
   }
@@ -1342,6 +1373,7 @@ function sendAdminPage(res) {
       button { border: 0; background: var(--blue); color: white; font-weight: 800; padding: 13px 18px; cursor: pointer; }
       button.secondary { background: #10213f; }
       .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 16px 0; flex-wrap: wrap; }
+      .admin-actions { display: flex; gap: 8px; flex-wrap: wrap; }
       .status { color: var(--muted); font-weight: 700; }
       table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
       th, td { text-align: left; border-bottom: 1px solid var(--line); padding: 12px 10px; vertical-align: top; font-size: 14px; }
@@ -1378,7 +1410,10 @@ function sendAdminPage(res) {
         </form>
         <div class="toolbar">
           <span class="status" id="statusText">Введите пароль администратора.</span>
-          <button class="secondary" type="button" id="refreshBtn">Обновить</button>
+          <div class="admin-actions">
+            <button class="secondary" type="button" id="refreshBtn">Пользователи</button>
+            <button class="secondary" type="button" id="ordersBtn">Заказы и чаты</button>
+          </div>
         </div>
         <div id="tableBox" class="empty">Список появится после входа.</div>
       </section>
@@ -1390,6 +1425,7 @@ function sendAdminPage(res) {
       const statusText = document.getElementById("statusText");
       const counter = document.getElementById("counter");
       const refreshBtn = document.getElementById("refreshBtn");
+      const ordersBtn = document.getElementById("ordersBtn");
       let adminPassword = sessionStorage.getItem("novaride_admin_password") || "";
 
       if (adminPassword) {
@@ -1405,6 +1441,7 @@ function sendAdminPage(res) {
       });
 
       refreshBtn.addEventListener("click", loadUsers);
+      ordersBtn.addEventListener("click", loadOrders);
 
       function esc(value) {
         return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
@@ -1481,6 +1518,76 @@ function sendAdminPage(res) {
           </table>
         \`;
       }
+
+      async function loadOrders() {
+        if (!adminPassword) {
+          statusText.textContent = "Введите пароль администратора.";
+          return;
+        }
+
+        statusText.textContent = "Загружаю заказы и чаты...";
+        tableBox.className = "empty";
+        tableBox.textContent = "Загрузка...";
+
+        try {
+          const response = await fetch("/api/admin/orders", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: adminPassword }),
+          });
+          const data = await response.json();
+
+          if (!response.ok || !data.ok) {
+            throw new Error(data.error || "Не удалось загрузить заказы.");
+          }
+
+          renderOrders(data.orders || []);
+          statusText.textContent = "Заказы обновлены.";
+        } catch (error) {
+          tableBox.className = "empty error";
+          tableBox.textContent = error.message;
+          statusText.textContent = "Проверьте пароль или настройки сервера.";
+        }
+      }
+
+      function renderOrders(orders) {
+        counter.textContent = orders.length + " заказов";
+        if (!orders.length) {
+          tableBox.className = "empty";
+          tableBox.textContent = "Пока нет заказов.";
+          return;
+        }
+
+        tableBox.className = "";
+        tableBox.innerHTML = \`
+          <table>
+            <thead>
+              <tr>
+                <th>Статус</th>
+                <th>Маршрут</th>
+                <th>Клиент</th>
+                <th>Водитель</th>
+                <th>Цена</th>
+                <th>Чат</th>
+                <th>Создан</th>
+              </tr>
+            </thead>
+            <tbody>
+              \${orders.map((order) => \`
+                <tr>
+                  <td data-label="Статус"><strong>\${esc(order.status)}</strong></td>
+                  <td data-label="Маршрут">\${esc(order.from)} → \${esc(order.to)}</td>
+                  <td data-label="Клиент">\${esc(order.passengerName)}<br><span class="mono">\${esc(order.passengerPhone || "")}</span></td>
+                  <td data-label="Водитель">\${order.driver ? esc(order.driver.name) + "<br><span class='mono'>" + esc(order.driver.phone || "") + "</span>" : "Не выбран"}</td>
+                  <td data-label="Цена"><strong>\${esc(order.price)} грн</strong></td>
+                  <td data-label="Чат"><div class="addresses">\${(order.messages || []).map((message) => \`<span><strong>\${esc(message.name)}:</strong> \${esc(message.text)}</span>\`).join("") || "<span>Нет сообщений</span>"}</div></td>
+                  <td data-label="Создан">\${order.createdAt ? new Date(order.createdAt).toLocaleString("ru-RU") : ""}</td>
+                </tr>
+              \`).join("")}
+            </tbody>
+          </table>
+        \`;
+      }
     </script>
   </body>
 </html>`);
@@ -1504,6 +1611,27 @@ async function handleAdminUsers(req, res) {
     sendJson(res, 200, { ok: true, users: users.map(publicUser) });
   } catch (error) {
     sendJson(res, 500, { ok: false, error: error.message || "Не удалось загрузить пользователей." });
+  }
+}
+
+async function handleAdminOrders(req, res) {
+  try {
+    const adminPassword = getAdminPassword();
+    if (!adminPassword) {
+      sendJson(res, 503, { ok: false, error: "ADMIN_PASSWORD не настроен в Render Environment." });
+      return;
+    }
+
+    const body = await readJson(req);
+    if (String(body.password || "") !== adminPassword) {
+      sendJson(res, 401, { ok: false, error: "Неверный пароль администратора." });
+      return;
+    }
+
+    const orders = await listAdminRideOrders();
+    sendJson(res, 200, { ok: true, orders: orders.map(publicOrder) });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось загрузить заказы." });
   }
 }
 
@@ -1743,6 +1871,11 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "POST" && req.url === "/api/admin/users") {
     handleAdminUsers(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/admin/orders") {
+    handleAdminOrders(req, res);
     return;
   }
 

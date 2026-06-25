@@ -1394,6 +1394,15 @@ function renderRideChat(order, sender) {
   `;
 }
 
+function focusRideChat(button) {
+  const scope = button.closest(".active-order-panel, .driver-detail-sheet") || document;
+  const input = scope.querySelector("[data-chat-input]");
+  if (input) {
+    input.scrollIntoView({ block: "center", behavior: "smooth" });
+    window.setTimeout(() => input.focus(), 220);
+  }
+}
+
 function applyOrderToMap(order) {
   if (!order?.a || !order?.b) return;
   const routeKey = JSON.stringify([order.a, order.stops || [], order.b]);
@@ -1559,6 +1568,8 @@ function saveActiveOrder(order) {
 function clearActiveOrder() {
   localStorage.removeItem(ACTIVE_ORDER_KEY);
   clearInterval(activeOrderTimer);
+  $("#offerBackdrop")?.remove();
+  document.body.classList.remove("has-offer-overlay");
 }
 
 function renderPassengerActiveOrder(order) {
@@ -1567,11 +1578,26 @@ function renderPassengerActiveOrder(order) {
     panel = document.createElement("section");
     panel.id = "activeOrderPanel";
     panel.className = "active-order-panel";
-    $("#ridePanel").append(panel);
+  }
+  let backdrop = $("#offerBackdrop");
+  if (!backdrop) {
+    backdrop = document.createElement("div");
+    backdrop.id = "offerBackdrop";
+    backdrop.className = "offer-backdrop";
   }
   const progress = Math.max(0, Math.min(100, ((Number(order.secondsLeft || 0) / ORDER_SEARCH_SECONDS) * 100).toFixed(2)));
   panel.style.setProperty("--order-progress", `${progress}%`);
   panel.className = `active-order-panel ${order.status === "accepted" ? "ride-confirmed" : ["expired", "canceled"].includes(order.status) ? "ride-expired" : "offer-toast"}`;
+  const isOfferOverlay = order.status === "open";
+  const panelHost = isOfferOverlay ? $("#taxiScreen") : $("#ridePanel");
+  if (panel.parentElement !== panelHost) panelHost.append(panel);
+  if (isOfferOverlay) {
+    if (backdrop.parentElement !== $("#taxiScreen")) $("#taxiScreen").append(backdrop);
+    document.body.classList.add("has-offer-overlay");
+  } else {
+    backdrop.remove();
+    document.body.classList.remove("has-offer-overlay");
+  }
 
   if (["expired", "canceled"].includes(order.status)) {
     clearActiveOrder();
@@ -1674,7 +1700,7 @@ async function sendRideMessage(orderId, sender) {
     if (!response.ok || !data.ok) throw new Error(data.error || "Не удалось отправить сообщение.");
     input.value = "";
     if (sender === "driver") {
-      showDriverAcceptedOrder(data.order);
+      showDriverAcceptedOrder(data.order, { syncMap: false, poll: true });
     } else {
       renderPassengerActiveOrder(data.order);
     }
@@ -1991,6 +2017,12 @@ function bindEvents() {
     setAddressPoint(point, center, suggestion.dataset.label || suggestion.querySelector("strong")?.textContent.trim() || suggestion.textContent.trim());
   });
   $("#ridePanel").addEventListener("click", (event) => {
+    const openChatButton = event.target.closest(".open-chat");
+    if (openChatButton) {
+      focusRideChat(openChatButton);
+      return;
+    }
+
     const offerButton = event.target.closest(".choose-offer");
     if (offerButton) {
       acceptPassengerOffer(offerButton.dataset.order, offerButton.dataset.offer);
@@ -2036,6 +2068,12 @@ function bindEvents() {
   $("#driverModeBtn").addEventListener("click", () => (state.driverMode ? showPassengerMode() : showDriverMode()));
   $$(".driver-tab").forEach((tab) => tab.addEventListener("click", () => setDriverTab(tab.dataset.driverTab)));
   $("#driverPanel").addEventListener("click", (event) => {
+    const openChatButton = event.target.closest(".open-chat");
+    if (openChatButton) {
+      focusRideChat(openChatButton);
+      return;
+    }
+
     const detailButton = event.target.closest(".order-detail");
     if (detailButton) {
       showDriverOrderDetails(detailButton.dataset.order);
