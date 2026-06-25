@@ -1433,7 +1433,7 @@ function hasCurrentDriverOffer(order) {
   return (order?.offers || []).some((offer) => offer.driver?.phone === phone);
 }
 
-function showDriverOfferDeclined() {
+function showDriverReturnToFeedNotice({ title, text, className = "" }) {
   clearInterval(driverAcceptedTimer);
   clearInterval(driverOrdersTimer);
   driverAcceptedTimer = null;
@@ -1448,15 +1448,36 @@ function showDriverOfferDeclined() {
   $("#screenTitle").textContent = "Лента";
   $("#driverContent").innerHTML = `
     ${driverTabs.feed}
-    <div class="driver-status-toast declined-offer-toast">
-      <strong>Ваше предложение отклонено</strong>
-      <span>Заказ снова скрыт из ожидания. Можно выбрать другую поездку из ленты.</span>
+    <div class="driver-status-toast ${escapeHtml(className)}">
+      <strong>${escapeHtml(title)}</strong>
+      <span>${escapeHtml(text)}</span>
     </div>
   `;
   $$(".driver-tab").forEach((tab) => tab.classList.toggle("is-active", tab.dataset.driverTab === "feed"));
   loadDriverOrders();
   driverOrdersTimer = window.setInterval(loadDriverOrders, 5000);
-  window.setTimeout(() => $(".declined-offer-toast")?.remove(), 5200);
+  window.setTimeout(() => $(".driver-status-toast")?.remove(), 5200);
+}
+
+function showDriverOfferDeclined() {
+  showDriverReturnToFeedNotice({
+    title: "Ваше предложение отклонено",
+    text: "Заказ снова скрыт из ожидания. Можно выбрать другую поездку из ленты.",
+    className: "declined-offer-toast",
+  });
+}
+
+function showDriverOrderCanceled(order) {
+  const lastSystemMessage = [...(order?.messages || [])].reverse().find((message) => message.sender === "system")?.text || "";
+  const isPassengerCancel = lastSystemMessage.includes("Клиент");
+
+  showDriverReturnToFeedNotice({
+    title: isPassengerCancel ? "Клиент отменил заказ" : "Заказ отменен",
+    text: isPassengerCancel
+      ? "Поездка отменена клиентом. Мы вернули вас в ленту, можно брать следующий заказ."
+      : "Заказ больше не активен. Мы вернули вас в ленту заказов.",
+    className: "canceled-order-toast",
+  });
 }
 
 function renderMapButton(order, target = "pickup") {
@@ -1674,6 +1695,10 @@ async function pollDriverAcceptedOrder(orderId) {
     if (!response.ok || !data.ok) throw new Error(data.error || "Заказ не найден.");
     if (data.order.status === "open" && !hasCurrentDriverOffer(data.order)) {
       showDriverOfferDeclined();
+      return;
+    }
+    if (data.order.status === "canceled") {
+      showDriverOrderCanceled(data.order);
       return;
     }
     if (!["open", "accepted"].includes(data.order.status)) {
