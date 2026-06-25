@@ -2288,8 +2288,8 @@ input:focus {
 }
 
 .driver-order-card {
-  grid-template-columns: 48px 1fr;
-  align-items: center;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: start;
 }
 
 .driver-order-card i {
@@ -2298,6 +2298,37 @@ input:focus {
   height: 44px;
   border-radius: 8px;
   background: linear-gradient(135deg, var(--midnight), var(--blue));
+}
+
+.driver-order-card strong,
+.driver-order-card span,
+.driver-order-card em,
+.driver-order-card .bid-row {
+  min-width: 0;
+}
+
+.driver-order-card strong {
+  line-height: 1.2;
+}
+
+.driver-order-card span,
+.driver-order-card em {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.driver-empty-card {
+  display: grid;
+  gap: 6px;
+  border: 1px dashed rgba(29, 103, 255, 0.28);
+  border-radius: 8px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--muted);
+}
+
+.driver-empty-card strong {
+  color: var(--ink);
 }
 
 .metric-card strong,
@@ -2432,12 +2463,40 @@ input:focus {
 }
 
 .bid-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(74px, 0.7fr) minmax(112px, 1fr) minmax(112px, 1fr);
   gap: 10px;
+  align-items: stretch;
 }
 
-.bid-row input {
+.bid-row input,
+.bid-row button {
+  width: 100%;
   min-width: 0;
+  min-height: 44px;
+  justify-content: center;
+  text-align: center;
+}
+
+@media (max-width: 520px) {
+  .driver-order-card {
+    grid-template-columns: 38px minmax(0, 1fr);
+    padding: 14px;
+  }
+
+  .driver-order-card i {
+    width: 36px;
+    height: 36px;
+  }
+
+  .bid-row {
+    grid-column: 1 / -1;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .bid-row input {
+    grid-column: 1 / -1;
+  }
 }
 
 body.dark {

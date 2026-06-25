@@ -1,4 +1,5 @@
 .env
 data/users.json
+data/orders.json
 data/auth-codes.json
 .tools/

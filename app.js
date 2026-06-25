@@ -14,6 +14,7 @@ const state = {
   tripDistanceKm: 10,
   currentSection: "ride",
   driverMode: false,
+  rideOrders: [],
   language: "ru",
   distanceUnit: "km",
   savedAddresses: [
@@ -42,6 +43,7 @@ let mapPoints = {
 };
 let addressSearchTimer;
 let accountCheckTimer;
+let driverOrdersTimer;
 
 const ODESSA_PLACES = [
   { name: "Дерибасовская 1", subtitle: "Центр Одессы", aliases: ["дерибасовская"], center: [30.7355, 46.4846] },
@@ -58,25 +60,6 @@ const ODESSA_PLACES = [
   { name: "Сити Центр Котовский", subtitle: "поселок Котовского", aliases: ["city center котовский", "сити центр котовский"], center: [30.7358, 46.5825] },
   { name: "Яхт-клуб Одесса", subtitle: "побережье / Отрада", aliases: ["яхта", "яхт", "yacht", "яхт клуб"], center: [30.7647, 46.4656] },
 ];
-
-const DRIVER_ORDERS = {
-  arcadia: {
-    title: "Дерибасовская 1 -> Аркадия",
-    from: "Дерибасовская 1",
-    to: "Аркадия",
-    a: [30.7355, 46.4846],
-    b: [30.7612, 46.4311],
-    details: "1 пассажир · без детей · без животных",
-  },
-  tairova: {
-    title: "Вокзал -> Таирова",
-    from: "ЖД вокзал Одесса",
-    to: "Таирова",
-    a: [30.7408, 46.4667],
-    b: [30.6719, 46.4119],
-    details: "2 пассажира · багаж · комфорт",
-  },
-};
 
 const iconLabels = {
   home: "Дом",
@@ -172,10 +155,7 @@ const sections = {
 const driverTabs = {
   feed: `
     <div class="section-hero driver-hero"><span>Режим водителя</span><h2>Лента заказов</h2><p>Выбирайте подходящие поездки и предлагайте свою цену.</p></div>
-    <div class="driver-feed">
-      <article class="driver-order-card"><i></i><strong>Дерибасовская 1 -> Аркадия</strong><span>1 пассажир · без детей · без животных</span><div class="bid-row"><input value="250" aria-label="Ваша цена" /><button class="mini-action order-detail" data-order="arcadia" type="button">Подробнее</button><button class="primary-action" type="button">Предложить</button></div></article>
-      <article class="driver-order-card"><i></i><strong>Вокзал -> Таирова</strong><span>2 пассажира · багаж · комфорт</span><div class="bid-row"><input value="260" aria-label="Ваша цена" /><button class="mini-action order-detail" data-order="tairova" type="button">Подробнее</button><button class="primary-action" type="button">Предложить</button></div></article>
-    </div>
+    <div class="driver-feed" id="driverFeed"><article class="driver-empty-card">Загружаем реальные заказы...</article></div>
     <div class="driver-route-preview" id="driverRoutePreview"></div>
   `,
   stats: `
@@ -204,6 +184,10 @@ const driverSections = {
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+}
 
 function setAuthStep(step) {
   state.authStep = step;
@@ -1179,6 +1163,7 @@ async function leaveAccount(kind) {
 }
 
 function showSection(section) {
+  clearInterval(driverOrdersTimer);
   state.currentSection = section;
   const isDriverFeed = state.driverMode && section === "ride";
   $(".content-grid").classList.toggle("section-mode", section !== "ride" || isDriverFeed);
@@ -1223,7 +1208,51 @@ function showPassengerMode() {
   showSection("ride");
 }
 
+function renderDriverOrders(orders) {
+  if (!orders.length) {
+    return `<article class="driver-empty-card"><strong>Пока нет заказов</strong><span>Когда пассажир нажмет "Найти водителя", заказ появится здесь онлайн.</span></article>`;
+  }
+
+  return orders
+    .map(
+      (order) => `
+        <article class="driver-order-card">
+          <i></i>
+          <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
+          <span>${escapeHtml(order.carClass)} · ${Number(order.distanceKm || 0).toFixed(1)} км · пассажир ${escapeHtml(order.passengerRating || 5)}</span>
+          ${order.comment ? `<em>${escapeHtml(order.comment)}</em>` : `<em>Без комментария</em>`}
+          <div class="bid-row">
+            <input value="${escapeHtml(order.price || state.selectedPrice)}" aria-label="Ваша цена" />
+            <button class="mini-action order-detail" data-order="${escapeHtml(order.id)}" type="button">Подробнее</button>
+            <button class="primary-action" type="button">Продолжить</button>
+          </div>
+        </article>
+      `,
+    )
+    .join("");
+}
+
+async function loadDriverOrders() {
+  const feed = $("#driverFeed");
+  if (!feed) return;
+
+  try {
+    const response = await fetch("/api/orders");
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "Не удалось загрузить заказы.");
+    }
+
+    state.rideOrders = data.orders || [];
+    feed.innerHTML = renderDriverOrders(state.rideOrders);
+  } catch (error) {
+    feed.innerHTML = `<article class="driver-empty-card"><strong>Заказы не загрузились</strong><span>${escapeHtml(error.message)}</span></article>`;
+  }
+}
+
 function showDriverContent(tabName) {
+  clearInterval(driverOrdersTimer);
   $(".content-grid").classList.add("section-mode");
   $(".map-panel").classList.add("is-hidden");
   $("#ridePanel").classList.add("is-hidden");
@@ -1234,10 +1263,14 @@ function showDriverContent(tabName) {
   $$(".driver-tab").forEach((tab) => tab.classList.toggle("is-active", tab.dataset.driverTab === tabName));
   $$(".menu-item").forEach((item) => item.classList.toggle("is-active", item.dataset.section === "ride" && tabName === "feed"));
   $("#sideMenu").classList.remove("is-open");
+  if (tabName === "feed") {
+    loadDriverOrders();
+    driverOrdersTimer = window.setInterval(loadDriverOrders, 5000);
+  }
 }
 
 async function showDriverOrderDetails(orderId) {
-  const order = DRIVER_ORDERS[orderId];
+  const order = state.rideOrders.find((item) => item.id === orderId);
   if (!order) return;
 
   mapPoints.a = order.a;
@@ -1261,8 +1294,8 @@ async function showDriverOrderDetails(orderId) {
   const preview = $("#driverRoutePreview");
   if (preview) {
     preview.innerHTML = `
-      <strong>${order.title}</strong>
-      <span>${order.details}</span>
+      <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
+      <span>${escapeHtml(order.carClass)} · ${escapeHtml(order.passengerName)} · рейтинг ${escapeHtml(order.passengerRating || 5)}</span>
       <em id="driverDistanceLabel">Маршрут строится...</em>
     `;
   }
@@ -1273,6 +1306,61 @@ async function showDriverOrderDetails(orderId) {
       label.textContent = `${state.tripDistanceKm.toFixed(1)} км · ориентир ${state.selectedPrice} грн`;
     }
   }, 1200);
+}
+
+async function createRideOrder() {
+  const button = $("#orderBtn");
+  const from = $("#fromInput").value.trim();
+  const to = $("#toInput").value.trim();
+  const selectedClass = $(".class-card.is-selected")?.dataset.className || "Эконом";
+
+  if (!from || !to) {
+    alert("Выберите адрес точки A и точки B.");
+    return;
+  }
+
+  if (!state.authSessionToken) {
+    alert("Войдите в аккаунт, чтобы создать заказ.");
+    return;
+  }
+
+  setButtonLoading(button, true, "Создаем заказ...");
+  let created = false;
+
+  try {
+    const response = await fetch("/api/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionToken: state.authSessionToken,
+        from,
+        to,
+        a: mapPoints.a,
+        b: mapPoints.b,
+        carClass: selectedClass,
+        price: state.selectedPrice,
+        distanceKm: state.tripDistanceKm,
+        comment: $("#rideComment").value.trim(),
+      }),
+    });
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "Не удалось создать заказ.");
+    }
+
+    created = true;
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    setButtonLoading(button, false);
+    if (created) {
+      button.textContent = "Заказ в ленте водителей";
+      window.setTimeout(() => {
+        button.textContent = "Найти водителя";
+      }, 2200);
+    }
+  }
 }
 
 function setDriverTab(tabName) {
@@ -1352,12 +1440,6 @@ function setPickupToUserLocation(coordinates) {
   mapPoints.a = coordinates;
   pickupMarker?.setLngLat(coordinates);
 
-  if (novaMap && !userLocationMarker) {
-    userLocationMarker = new mapboxgl.Marker({ element: createUserLocationMarker() }).setLngLat(coordinates).addTo(novaMap);
-  } else {
-    userLocationMarker?.setLngLat(coordinates);
-  }
-
   activeMapPoint = "b";
   reverseGeocodePoint("a", coordinates);
   updateRouteLine();
@@ -1401,14 +1483,6 @@ function initMapboxMap() {
     });
 
     novaMap.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
-    const geolocateControl = new mapboxgl.GeolocateControl({
-      positionOptions: { enableHighAccuracy: true },
-      trackUserLocation: false,
-      showAccuracyCircle: false,
-      showUserHeading: true,
-    });
-    novaMap.addControl(geolocateControl, "bottom-right");
-    geolocateControl.on("geolocate", (event) => setPickupToUserLocation([event.coords.longitude, event.coords.latitude]));
 
     const route = [mapPoints.a, [30.7413, 46.4738], [30.7516, 46.4544], mapPoints.b];
 
@@ -1432,22 +1506,6 @@ function initMapboxMap() {
       localizeMapLabels();
       installRouteLayer();
 
-      updateRouteLine();
-    });
-
-    novaMap.on("click", (event) => {
-      const coords = event.lngLat;
-      if (activeMapPoint === "a") {
-        mapPoints.a = coords.toArray();
-        pickupMarker?.setLngLat(mapPoints.a);
-        reverseGeocodePoint("a", mapPoints.a);
-        activeMapPoint = "b";
-      } else {
-        mapPoints.b = coords.toArray();
-        destinationMarker?.setLngLat(mapPoints.b);
-        reverseGeocodePoint("b", mapPoints.b);
-        activeMapPoint = "a";
-      }
       updateRouteLine();
     });
   } catch (error) {
@@ -1554,12 +1612,7 @@ function bindEvents() {
     }
   });
   $("#themeQuickBtn").addEventListener("click", () => applyTheme(document.body.classList.contains("dark") ? "light" : "dark"));
-  $("#orderBtn").addEventListener("click", () => {
-    $("#orderBtn").textContent = "Ищем водителя...";
-    setTimeout(() => {
-      $("#orderBtn").textContent = "Водитель найден: 4 мин";
-    }, 800);
-  });
+  $("#orderBtn").addEventListener("click", createRideOrder);
 }
 
 bindEvents();

@@ -9,9 +9,11 @@ const PORT = Number(process.env.PORT || 4174);
 const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, "data");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
+const ORDERS_FILE = path.join(DATA_DIR, "orders.json");
 const CODES_FILE = path.join(DATA_DIR, "auth-codes.json");
 const CODE_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const codes = new Map();
 const sessions = new Map();
 const verifiedDestinations = new Map();
@@ -80,6 +82,10 @@ function ensureDatabase() {
   if (!fs.existsSync(USERS_FILE)) {
     fs.writeFileSync(USERS_FILE, JSON.stringify({ users: [] }, null, 2));
   }
+
+  if (!fs.existsSync(ORDERS_FILE)) {
+    fs.writeFileSync(ORDERS_FILE, JSON.stringify({ orders: [] }, null, 2));
+  }
 }
 
 function readUsers() {
@@ -95,6 +101,21 @@ function readUsers() {
 function writeUsers(users) {
   ensureDatabase();
   fs.writeFileSync(USERS_FILE, JSON.stringify({ users }, null, 2));
+}
+
+function readOrders() {
+  ensureDatabase();
+  try {
+    const data = JSON.parse(fs.readFileSync(ORDERS_FILE, "utf8"));
+    return Array.isArray(data.orders) ? data.orders : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeOrders(orders) {
+  ensureDatabase();
+  fs.writeFileSync(ORDERS_FILE, JSON.stringify({ orders }, null, 2));
 }
 
 function hasPostgresConfig() {
@@ -132,6 +153,25 @@ async function ensurePostgres() {
         saved_addresses JSONB DEFAULT '[]'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS ride_orders (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        passenger_name TEXT NOT NULL,
+        passenger_rating NUMERIC DEFAULT 5,
+        from_address TEXT NOT NULL,
+        to_address TEXT NOT NULL,
+        from_lng NUMERIC NOT NULL,
+        from_lat NUMERIC NOT NULL,
+        to_lng NUMERIC NOT NULL,
+        to_lat NUMERIC NOT NULL,
+        car_class TEXT NOT NULL,
+        price INTEGER NOT NULL,
+        distance_km NUMERIC DEFAULT 0,
+        comment TEXT DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
   }
@@ -280,11 +320,52 @@ function publicUser(user) {
   };
 }
 
+function orderFromRow(row) {
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    userId: row.user_id,
+    passengerName: row.passenger_name,
+    passengerRating: Number(row.passenger_rating || 5),
+    from: row.from_address,
+    to: row.to_address,
+    a: [Number(row.from_lng), Number(row.from_lat)],
+    b: [Number(row.to_lng), Number(row.to_lat)],
+    carClass: row.car_class,
+    price: Number(row.price || 0),
+    distanceKm: Number(row.distance_km || 0),
+    comment: row.comment || "",
+    status: row.status,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+  };
+}
+
+function publicOrder(order) {
+  if (!order) return null;
+
+  return {
+    id: order.id,
+    passengerName: order.passengerName,
+    passengerRating: order.passengerRating || 5,
+    from: order.from,
+    to: order.to,
+    a: order.a,
+    b: order.b,
+    carClass: order.carClass,
+    price: order.price,
+    distanceKm: order.distanceKm,
+    comment: order.comment || "",
+    status: order.status,
+    createdAt: order.createdAt,
+  };
+}
+
 function createSession(destination) {
   const token = createId();
   sessions.set(token, {
     destination,
-    expiresAt: Date.now() + 30 * 60 * 1000,
+    expiresAt: Date.now() + SESSION_TTL_MS,
   });
   return token;
 }
@@ -510,6 +591,92 @@ async function listUsers() {
     .slice()
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
     .slice(0, 500);
+}
+
+async function createRideOrder(destination, payload) {
+  const user = await findUserByDestination(destination);
+  if (!user) {
+    throw new Error("Профиль не найден. Войдите в аккаунт еще раз.");
+  }
+
+  const fromCoords = Array.isArray(payload.a) ? payload.a.map(Number) : [];
+  const toCoords = Array.isArray(payload.b) ? payload.b.map(Number) : [];
+  const from = String(payload.from || "").trim();
+  const to = String(payload.to || "").trim();
+
+  if (!from || !to || fromCoords.length !== 2 || toCoords.length !== 2 || fromCoords.some(Number.isNaN) || toCoords.some(Number.isNaN)) {
+    throw new Error("Выберите точку A и точку B через адресные строки.");
+  }
+
+  const now = new Date().toISOString();
+  const order = {
+    id: createId(),
+    userId: user.id,
+    passengerName: user.name || "Клиент",
+    passengerRating: user.rating || 5,
+    from,
+    to,
+    a: fromCoords,
+    b: toCoords,
+    carClass: String(payload.carClass || "Эконом").trim(),
+    price: Math.max(1, Number.parseInt(payload.price, 10) || 0),
+    distanceKm: Math.max(0, Number(payload.distanceKm) || 0),
+    comment: String(payload.comment || "").trim().slice(0, 500),
+    status: "open",
+    createdAt: now,
+  };
+
+  const pool = await ensurePostgres();
+  if (pool) {
+    const result = await pool.query(
+      `
+        INSERT INTO ride_orders (
+          id, user_id, passenger_name, passenger_rating, from_address, to_address,
+          from_lng, from_lat, to_lng, to_lat, car_class, price, distance_km, comment, status, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        RETURNING *
+      `,
+      [
+        order.id,
+        order.userId,
+        order.passengerName,
+        order.passengerRating,
+        order.from,
+        order.to,
+        order.a[0],
+        order.a[1],
+        order.b[0],
+        order.b[1],
+        order.carClass,
+        order.price,
+        order.distanceKm,
+        order.comment,
+        order.status,
+        order.createdAt,
+      ],
+    );
+    return orderFromRow(result.rows[0]);
+  }
+
+  const orders = readOrders();
+  orders.push(order);
+  writeOrders(orders);
+  return order;
+}
+
+async function listOpenRideOrders() {
+  const pool = await ensurePostgres();
+
+  if (pool) {
+    const result = await pool.query("SELECT * FROM ride_orders WHERE status = 'open' ORDER BY created_at DESC LIMIT 100");
+    return result.rows.map(orderFromRow);
+  }
+
+  return readOrders()
+    .filter((order) => order.status === "open")
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .slice(0, 100);
 }
 
 async function deliverCode({ channel, destination, code }) {
@@ -1130,6 +1297,32 @@ async function handleSaveAddresses(req, res) {
   }
 }
 
+async function handleCreateRideOrder(req, res) {
+  try {
+    const body = await readJson(req);
+    const session = getSession(body.sessionToken);
+
+    if (!session) {
+      sendJson(res, 401, { ok: false, error: "Сессия истекла. Войдите снова, чтобы создать заказ." });
+      return;
+    }
+
+    const order = await createRideOrder(session.destination, body);
+    sendJson(res, 200, { ok: true, order: publicOrder(order) });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось создать заказ." });
+  }
+}
+
+async function handleListRideOrders(req, res) {
+  try {
+    const orders = await listOpenRideOrders();
+    sendJson(res, 200, { ok: true, orders: orders.map(publicOrder) });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось загрузить заказы." });
+  }
+}
+
 async function handleDeleteAccount(req, res) {
   try {
     const body = await readJson(req);
@@ -1227,6 +1420,16 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "POST" && req.url === "/api/users/addresses") {
     handleSaveAddresses(req, res);
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/orders") {
+    handleListRideOrders(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/orders") {
+    handleCreateRideOrder(req, res);
     return;
   }
 
