@@ -36,6 +36,8 @@ const DRIVER_ACTIVE_ORDER_KEY = "novaride_driver_active_order";
 const DRIVER_DETAIL_ORDER_KEY = "novaride_driver_detail_order";
 const DRIVER_TAB_KEY = "novaride_driver_tab";
 const ORDER_SEARCH_SECONDS = 40;
+const MAX_ROUTE_STOPS = 5;
+const STOP_POINT_LABELS = ["C", "D", "E", "F", "G"];
 
 let MAPBOX_TOKEN = "";
 const ODESSA_CENTER = [30.7233, 46.4825];
@@ -753,21 +755,73 @@ async function finishAuth(event) {
   }
 }
 
+function getStopPointLabel(index) {
+  return STOP_POINT_LABELS[index] || String(index + 1);
+}
+
+function getStopIndex(point) {
+  const match = String(point || "").match(/^stop-(\d+)$/);
+  return match ? Number(match[1]) : -1;
+}
+
+function normalizeRouteStop(stop = {}) {
+  const coordinates = stop.coordinates || stop.center || stop.point || null;
+  return {
+    label: stop.label || stop.address || "",
+    coordinates: Array.isArray(coordinates) ? coordinates : null,
+  };
+}
+
+function getRouteStops() {
+  return (mapPoints.stops || []).map(normalizeRouteStop).filter((stop) => Array.isArray(stop.coordinates));
+}
+
+function renderStopsList() {
+  const list = $("#stopsList");
+  if (!list) return;
+
+  list.innerHTML = (mapPoints.stops || [])
+    .map((stop, index) => {
+      const normalized = normalizeRouteStop(stop);
+      const label = getStopPointLabel(index);
+      return `
+        <div class="route-point stop-point" data-stop-row="${index}">
+          <span>${label}</span>
+          <div class="address-field">
+            <input
+              class="stop-input"
+              data-stop-index="${index}"
+              value="${escapeHtml(normalized.label)}"
+              placeholder="Остановка ${label}"
+              aria-label="Остановка ${label}"
+              autocomplete="off"
+            />
+            <div class="address-suggestions" data-suggestions="stop-${index}"></div>
+          </div>
+          <button class="remove-stop-btn" type="button" data-remove-stop="${index}" aria-label="Удалить остановку ${label}">×</button>
+        </div>
+      `;
+    })
+    .join("");
+}
+
 function addStop() {
-  const count = $$("#stopsList .field").length + 1;
-  const label = document.createElement("label");
-  label.className = "field stop-field";
-  label.innerHTML = `<span>Остановка ${count}</span><input class="stop-input" data-stop-index="${count - 1}" placeholder="Адрес остановки" autocomplete="off" />`;
-  $("#stopsList").append(label);
-  const input = label.querySelector("input");
-  input.focus();
-  input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      geocodeStop(input);
-    }
-  });
-  input.addEventListener("blur", () => geocodeStop(input));
+  if ((mapPoints.stops || []).length >= MAX_ROUTE_STOPS) {
+    alert("Можно добавить максимум 5 остановок.");
+    return;
+  }
+
+  mapPoints.stops.push({ label: "", coordinates: null });
+  renderStopsList();
+  const input = $(`#stopsList [data-stop-index="${mapPoints.stops.length - 1}"]`);
+  input?.focus();
+}
+
+function removeStop(index) {
+  mapPoints.stops.splice(index, 1);
+  renderStopsList();
+  renderStopMarkers();
+  updateRouteLine();
 }
 
 function selectClass(card) {
@@ -811,8 +865,8 @@ function renderStopMarkers() {
   clearStopMarkers();
   if (!novaMap) return;
 
-  mapPoints.stops.forEach((stop, index) => {
-    const marker = new mapboxgl.Marker({ element: createMapMarker(String(index + 1), "stop"), draggable: false })
+  getRouteStops().forEach((stop, index) => {
+    const marker = new mapboxgl.Marker({ element: createMapMarker(getStopPointLabel(index), "stop"), draggable: false })
       .setLngLat(stop.coordinates)
       .addTo(novaMap);
     stopMarkers.push(marker);
@@ -916,7 +970,7 @@ function installRouteLayer() {
 async function updateRouteLine() {
   if (!novaMap || !mapPoints.a || !mapPoints.b) return;
 
-  const routePoints = [mapPoints.a, ...(mapPoints.stops || []).map((stop) => stop.coordinates).filter(Boolean), mapPoints.b];
+  const routePoints = [mapPoints.a, ...getRouteStops().map((stop) => stop.coordinates), mapPoints.b];
   const directRoute = routePoints;
   const detailPadding = $(".workspace")?.classList.contains("driver-order-view")
     ? { top: 92, right: 70, bottom: 92, left: 70 }
@@ -973,12 +1027,25 @@ async function reverseGeocodePoint(point, coordinates) {
 }
 
 function setAddressPoint(point, coordinates, label) {
+  const stopIndex = getStopIndex(point);
+
+  if (stopIndex >= 0) {
+    mapPoints.stops[stopIndex] = { label, coordinates };
+    const input = $(`#stopsList [data-stop-index="${stopIndex}"]`);
+    if (input) input.value = label;
+    hideAddressSuggestions(point);
+    renderStopMarkers();
+    updateRouteLine();
+    return;
+  }
+
   mapPoints[point] = coordinates;
   const marker = point === "a" ? pickupMarker : destinationMarker;
   const input = point === "a" ? $("#fromInput") : $("#toInput");
   marker?.setLngLat(coordinates);
   input.value = label;
   hideAddressSuggestions(point);
+  renderStopMarkers();
   updateRouteLine();
 }
 
@@ -1015,10 +1082,7 @@ async function geocodeStop(input) {
   try {
     const knownPlace = ODESSA_PLACES.find((place) => matchesLocalPlace(place, cleanQuery) || cleanQuery.toLowerCase().includes(place.name.toLowerCase()));
     if (knownPlace) {
-      mapPoints.stops[index] = { label: knownPlace.name, coordinates: knownPlace.center };
-      input.value = knownPlace.name;
-      renderStopMarkers();
-      updateRouteLine();
+      setAddressPoint(`stop-${index}`, knownPlace.center, knownPlace.name);
       return;
     }
 
@@ -1030,10 +1094,7 @@ async function geocodeStop(input) {
     if (!feature) return;
 
     const label = formatMapboxPlace(feature);
-    mapPoints.stops[index] = { label, coordinates: feature.center };
-    input.value = label;
-    renderStopMarkers();
-    updateRouteLine();
+    setAddressPoint(`stop-${index}`, feature.center, label);
   } catch {
     // Keep the typed stop address if geocoding is temporarily unavailable.
   }
@@ -1119,6 +1180,35 @@ function bindAddressSearch() {
       addressSearchTimer = window.setTimeout(() => showAddressSuggestions(point, input.value), 220);
     });
     input.addEventListener("blur", () => geocodeAddress(point, input.value));
+  });
+
+  $("#stopsList")?.addEventListener("keydown", (event) => {
+    const input = event.target.closest("[data-stop-index]");
+    if (!input || event.key !== "Enter") return;
+
+    event.preventDefault();
+    geocodeStop(input);
+  });
+
+  $("#stopsList")?.addEventListener("input", (event) => {
+    const input = event.target.closest("[data-stop-index]");
+    if (!input) return;
+
+    const index = Number(input.dataset.stopIndex || 0);
+    clearTimeout(addressSearchTimer);
+    addressSearchTimer = window.setTimeout(() => showAddressSuggestions(`stop-${index}`, input.value), 220);
+  });
+
+  $("#stopsList")?.addEventListener("blur", (event) => {
+    const input = event.target.closest("[data-stop-index]");
+    if (input) geocodeStop(input);
+  }, true);
+
+  $("#stopsList")?.addEventListener("click", (event) => {
+    const removeButton = event.target.closest("[data-remove-stop]");
+    if (!removeButton) return;
+
+    removeStop(Number(removeButton.dataset.removeStop || 0));
   });
 }
 
@@ -1497,7 +1587,8 @@ function renderMapButton(order, target = "pickup") {
   const point = target === "destination" ? order?.b : order?.a;
   const fallback = target === "destination" ? order?.to : order?.from;
   const destination = Array.isArray(point) ? `${point[1]},${point[0]}` : encodeURIComponent(fallback || "Одесса");
-  return `<a class="round-contact maps-contact" href="https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving" target="_blank" rel="noopener">Открыть карту</a>`;
+  const label = target === "destination" ? "Маршрут к точке B" : "Маршрут к клиенту";
+  return `<a class="round-contact maps-contact" href="https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving" target="_blank" rel="noopener"><span class="map-mini-icon"></span>${label}</a>`;
 }
 
 function renderOrderStops(order) {
@@ -1567,12 +1658,14 @@ function scrollRideChatToBottom(scope = document) {
 
 function applyOrderToMap(order) {
   if (!order?.a || !order?.b) return;
-  const routeKey = JSON.stringify([order.a, order.stops || [], order.b]);
+  const orderStops = (order.stops || []).map(normalizeRouteStop);
+  const routeKey = JSON.stringify([order.a, orderStops, order.b]);
   mapPoints.a = order.a;
   mapPoints.b = order.b;
-  mapPoints.stops = order.stops || [];
+  mapPoints.stops = orderStops;
   $("#fromInput").value = order.from;
   $("#toInput").value = order.to;
+  renderStopsList();
   pickupMarker?.setLngLat(order.a);
   destinationMarker?.setLngLat(order.b);
   renderStopMarkers();
@@ -2103,7 +2196,7 @@ async function createRideOrder() {
         to,
         a: mapPoints.a,
         b: mapPoints.b,
-        stops: mapPoints.stops || [],
+        stops: getRouteStops(),
         carClass: selectedClass,
         price: state.selectedPrice,
         distanceKm: state.tripDistanceKm,
