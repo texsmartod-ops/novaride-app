@@ -58,6 +58,7 @@ let driverAcceptedTimer;
 let driverCarMarker;
 let lastRouteKey = "";
 let rideChatActiveUntil = 0;
+const sendingRideMessages = new Set();
 
 const ODESSA_PLACES = [
   { name: "Дерибасовская 1", subtitle: "Центр Одессы", aliases: ["дерибасовская"], center: [30.7355, 46.4846] },
@@ -1556,6 +1557,14 @@ function markRideChatActive() {
   rideChatActiveUntil = Date.now() + 8000;
 }
 
+function scrollRideChatToBottom(scope = document) {
+  window.setTimeout(() => {
+    scope.querySelectorAll?.(".ride-chat-log").forEach((log) => {
+      log.scrollTop = log.scrollHeight;
+    });
+  }, 40);
+}
+
 function applyOrderToMap(order) {
   if (!order?.a || !order?.b) return;
   const routeKey = JSON.stringify([order.a, order.stops || [], order.b]);
@@ -1724,6 +1733,7 @@ function showDriverAcceptedOrder(order, options = {}) {
       <button class="ghost-action cancel-order" data-order="${escapeHtml(order.id)}" data-sender="driver" type="button">Отменить заказ</button>
     </div>
   `;
+  if (order.status === "accepted") scrollRideChatToBottom($("#driverContent"));
   if (shouldSyncMap) applyOrderToMap(order);
 }
 
@@ -1821,6 +1831,7 @@ function renderPassengerActiveOrder(order) {
       ${renderRideChat(order, "passenger")}
       <button class="ghost-action cancel-order" data-order="${escapeHtml(order.id)}" data-sender="passenger" type="button">Отменить заказ</button>
     `;
+    scrollRideChatToBottom(panel);
     applyOrderToMap(order);
     showDriverCarOnMap(order);
     return;
@@ -1909,10 +1920,13 @@ async function acceptPassengerOffer(orderId, offerId) {
 }
 
 async function sendRideMessage(orderId, sender) {
+  const sendKey = `${orderId}:${sender}`;
+  if (sendingRideMessages.has(sendKey)) return;
   const input = document.querySelector(`[data-chat-input="${CSS.escape(orderId)}"]`);
   const text = input?.value.trim();
   if (!text) return;
   markRideChatActive();
+  sendingRideMessages.add(sendKey);
 
   const button = document.querySelector(`.send-ride-message[data-order="${CSS.escape(orderId)}"][data-sender="${CSS.escape(sender)}"]`);
   if (button) setButtonLoading(button, true, "...");
@@ -1938,6 +1952,7 @@ async function sendRideMessage(orderId, sender) {
   } catch (error) {
     alert(error.message);
   } finally {
+    sendingRideMessages.delete(sendKey);
     if (button) setButtonLoading(button, false);
   }
 }
