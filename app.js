@@ -1544,30 +1544,110 @@ function renderDriverVerificationGate(verification = getDriverVerification()) {
           : "Заполните 3 пункта, и заявка уйдет администратору на проверку."
       }</p>
 
-      <div class="verification-step">
-        <strong>1. Транспорт</strong>
-        <div class="verification-grid">
-          <input name="transport" placeholder="Марка и модель" value="${escapeHtml(vehicle.transport || "")}" required />
-          <input name="year" placeholder="Год" inputmode="numeric" value="${escapeHtml(vehicle.year || "")}" required />
-          <input name="color" placeholder="Цвет" value="${escapeHtml(vehicle.color || "")}" required />
-          <input name="plate" placeholder="Номер авто" value="${escapeHtml(vehicle.plate || "")}" required />
+      <div class="verification-step is-active" data-verification-step="1">
+        <button class="verification-step-header" type="button" data-open-verification-step="1">
+          <span class="step-number">1</span>
+          <strong>Транспорт</strong>
+          <em>Марка, год, цвет, номер</em>
+          <span class="step-check"></span>
+        </button>
+        <div class="verification-step-body">
+          <div class="verification-grid">
+            <label class="icon-field car-field"><span></span><input name="transport" placeholder="Марка и модель" value="${escapeHtml(vehicle.transport || "")}" required /></label>
+            <label class="icon-field year-field"><span></span><input name="year" placeholder="Год" inputmode="numeric" value="${escapeHtml(vehicle.year || "")}" required /></label>
+            <label class="icon-field color-field"><span></span><input name="color" placeholder="Цвет" value="${escapeHtml(vehicle.color || "")}" required /></label>
+            <label class="icon-field plate-field"><span></span><input name="plate" placeholder="Номер авто" value="${escapeHtml(vehicle.plate || "")}" required /></label>
+          </div>
+          <button class="mini-action complete-verification-step" type="button" data-complete-step="1">Готово</button>
         </div>
       </div>
 
-      <div class="verification-step">
-        <strong>2. Техпаспорт</strong>
-        <label class="file-pill"><span>Передняя сторона</span><input name="techFront" type="file" accept="image/*" required /></label>
-        <label class="file-pill"><span>Обратная сторона</span><input name="techBack" type="file" accept="image/*" required /></label>
+      <div class="verification-step is-locked" data-verification-step="2">
+        <button class="verification-step-header" type="button" data-open-verification-step="2">
+          <span class="step-number">2</span>
+          <strong>Техпаспорт</strong>
+          <em>Две стороны документа</em>
+          <span class="step-check"></span>
+        </button>
+        <div class="verification-step-body">
+          <label class="file-pill document-field"><i></i><span>Передняя сторона</span><small data-file-name="techFront">Выбрать фото</small><input name="techFront" type="file" accept="image/*" required /></label>
+          <label class="file-pill document-field back"><i></i><span>Обратная сторона</span><small data-file-name="techBack">Выбрать фото</small><input name="techBack" type="file" accept="image/*" required /></label>
+          <button class="mini-action complete-verification-step" type="button" data-complete-step="2">Готово</button>
+        </div>
       </div>
 
-      <div class="verification-step">
-        <strong>3. Верификация лица</strong>
-        <label class="file-pill"><span>Фото лица</span><input name="facePhoto" type="file" accept="image/*" capture="user" required /></label>
+      <div class="verification-step is-locked" data-verification-step="3">
+        <button class="verification-step-header" type="button" data-open-verification-step="3">
+          <span class="step-number">3</span>
+          <strong>Верификация лица</strong>
+          <em>Фото для проверки</em>
+          <span class="step-check"></span>
+        </button>
+        <div class="verification-step-body">
+          <label class="file-pill face-field"><i></i><span>Сделать или выбрать фото</span><small data-file-name="facePhoto">Открыть камеру</small><input name="facePhoto" type="file" accept="image/*" capture="user" required /></label>
+          <button class="mini-action complete-verification-step" type="button" data-complete-step="3">Готово</button>
+        </div>
       </div>
 
-      <button class="primary-action" type="submit">Отправить на проверку</button>
+      <button class="primary-action verification-submit is-hidden" type="submit">Отправить на проверку</button>
     </form>
   `;
+}
+
+function getVerificationStepFields(form, step) {
+  const fields = {
+    1: ["transport", "year", "color", "plate"],
+    2: ["techFront", "techBack"],
+    3: ["facePhoto"],
+  }[step] || [];
+  return fields.map((name) => form.elements[name]).filter(Boolean);
+}
+
+function isVerificationStepComplete(form, step) {
+  return getVerificationStepFields(form, step).every((field) => {
+    if (field.type === "file") return field.files?.length;
+    return field.value.trim();
+  });
+}
+
+function openVerificationStep(form, step) {
+  const targetStep = Number(step);
+  form.querySelectorAll("[data-verification-step]").forEach((section) => {
+    const currentStep = Number(section.dataset.verificationStep);
+    const canOpen = currentStep === 1 || isVerificationStepComplete(form, currentStep - 1) || section.classList.contains("is-complete");
+    section.classList.toggle("is-active", currentStep === targetStep && canOpen);
+    section.classList.toggle("is-locked", !canOpen);
+  });
+}
+
+function updateVerificationSubmit(form) {
+  const allDone = [1, 2, 3].every((step) => isVerificationStepComplete(form, step));
+  form.querySelector(".verification-submit")?.classList.toggle("is-hidden", !allDone);
+}
+
+function completeDriverVerificationStep(form, step) {
+  const section = form.querySelector(`[data-verification-step="${step}"]`);
+  if (!isVerificationStepComplete(form, Number(step))) {
+    alert("Заполните все поля этого пункта.");
+    return;
+  }
+
+  section?.classList.add("is-complete");
+  section?.classList.remove("is-active");
+  if (Number(step) < 3) {
+    openVerificationStep(form, Number(step) + 1);
+  } else {
+    form.querySelectorAll("[data-verification-step]").forEach((item) => item.classList.remove("is-active"));
+  }
+  updateVerificationSubmit(form);
+}
+
+function syncVerificationFileName(input) {
+  const form = input.closest("#driverVerificationForm");
+  const label = form?.querySelector(`[data-file-name="${CSS.escape(input.name)}"]`);
+  if (label) {
+    label.textContent = input.files?.[0]?.name || (input.name === "facePhoto" ? "Открыть камеру" : "Выбрать фото");
+  }
 }
 
 async function showDriverVerificationGate() {
@@ -2981,6 +3061,20 @@ function bindEvents() {
       return;
     }
 
+    const openVerificationButton = event.target.closest("[data-open-verification-step]");
+    if (openVerificationButton) {
+      const form = openVerificationButton.closest("#driverVerificationForm");
+      if (form) openVerificationStep(form, openVerificationButton.dataset.openVerificationStep);
+      return;
+    }
+
+    const completeStepButton = event.target.closest(".complete-verification-step");
+    if (completeStepButton) {
+      const form = completeStepButton.closest("#driverVerificationForm");
+      if (form) completeDriverVerificationStep(form, completeStepButton.dataset.completeStep);
+      return;
+    }
+
     const openChatButton = event.target.closest(".open-chat");
     if (openChatButton) {
       focusRideChat(openChatButton);
@@ -3059,6 +3153,17 @@ function bindEvents() {
     if (!form) return;
     event.preventDefault();
     submitDriverVerification(form);
+  });
+  $("#driverPanel").addEventListener("change", (event) => {
+    const fileInput = event.target.closest("#driverVerificationForm input[type='file']");
+    if (fileInput) {
+      syncVerificationFileName(fileInput);
+      updateVerificationSubmit(fileInput.closest("#driverVerificationForm"));
+    }
+  });
+  $("#driverPanel").addEventListener("input", (event) => {
+    const form = event.target.closest("#driverVerificationForm");
+    if (form) updateVerificationSubmit(form);
   });
   ["pointerdown", "touchstart", "focusin", "input"].forEach((eventName) => {
     $("#driverPanel").addEventListener(eventName, (event) => {

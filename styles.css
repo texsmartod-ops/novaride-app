@@ -1021,15 +1021,94 @@ input:focus {
 .verification-step,
 .verification-summary {
   display: grid;
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid rgba(166, 184, 214, 0.42);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.verification-summary {
   gap: 10px;
   padding: 14px;
-  border: 1px solid rgba(166, 184, 214, 0.42);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.72);
 }
 
 .verification-step strong {
   color: var(--midnight);
+}
+
+.verification-step-header {
+  display: grid;
+  grid-template-columns: 38px 1fr 24px;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 14px;
+  border: 0;
+  background: transparent;
+  color: var(--midnight);
+  text-align: left;
+}
+
+.verification-step-header strong,
+.verification-step-header em {
+  grid-column: 2;
+}
+
+.verification-step-header em {
+  color: var(--muted);
+  font-style: normal;
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+.step-number,
+.step-check {
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  font-weight: 1000;
+}
+
+.step-number {
+  grid-row: 1 / span 2;
+  width: 38px;
+  height: 38px;
+  background: #07172f;
+  color: #fff;
+}
+
+.step-check {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(166, 184, 214, 0.7);
+}
+
+.verification-step.is-complete .step-check {
+  border-color: #16c784;
+  background: #16c784;
+}
+
+.verification-step.is-complete .step-check::before {
+  content: "✓";
+  color: #fff;
+}
+
+.verification-step.is-locked {
+  opacity: 0.58;
+}
+
+.verification-step-body {
+  display: none;
+  gap: 12px;
+  padding: 0 14px 14px;
+}
+
+.verification-step.is-active .verification-step-body {
+  display: grid;
 }
 
 .verification-grid {
@@ -1038,7 +1117,7 @@ input:focus {
   gap: 10px;
 }
 
-.verification-grid input,
+.icon-field,
 .file-pill {
   width: 100%;
   min-height: 48px;
@@ -1048,15 +1127,86 @@ input:focus {
   color: var(--midnight);
 }
 
-.verification-grid input {
-  padding: 0 13px;
+.icon-field {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  align-items: center;
+  padding: 0 12px;
+}
+
+.icon-field span {
+  width: 22px;
+  height: 22px;
+  opacity: 0.9;
+}
+
+.icon-field input {
+  min-width: 0;
+  height: 46px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  outline: 0;
+}
+
+.car-field span {
+  border-radius: 12px 14px 5px 5px;
+  background:
+    radial-gradient(circle at 5px 19px, #07172f 0 3px, transparent 4px),
+    radial-gradient(circle at 17px 19px, #07172f 0 3px, transparent 4px),
+    linear-gradient(135deg, #dff6ff, #1d67ff);
+}
+
+.year-field span {
+  border: 2px solid #1d67ff;
+  border-radius: 7px;
+  box-shadow: inset 0 6px 0 rgba(29, 103, 255, 0.18);
+}
+
+.color-field span {
+  border-radius: 50%;
+  background: conic-gradient(from 40deg, #1d67ff, #35d4ff, #16c784, #f59e0b, #ef4444, #1d67ff);
+}
+
+.plate-field span {
+  border: 2px solid #07172f;
+  border-radius: 5px;
+  background: linear-gradient(90deg, #1d67ff 0 26%, #fff 26%);
 }
 
 .file-pill {
+  position: relative;
   display: grid;
-  gap: 6px;
-  padding: 11px 13px;
+  grid-template-columns: 42px 1fr;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 12px 14px;
   cursor: pointer;
+}
+
+.file-pill i {
+  grid-row: 1 / span 2;
+  width: 36px;
+  height: 42px;
+  border-radius: 9px;
+  background:
+    linear-gradient(135deg, transparent 0 72%, rgba(255, 255, 255, 0.85) 72%),
+    linear-gradient(180deg, #eaf4ff, #b9ddff);
+  box-shadow: inset 0 0 0 2px rgba(29, 103, 255, 0.18);
+}
+
+.file-pill.back i {
+  background:
+    repeating-linear-gradient(180deg, rgba(7, 23, 47, 0.2) 0 2px, transparent 2px 7px),
+    linear-gradient(180deg, #eaf4ff, #b9ddff);
+}
+
+.file-pill.face-field i {
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 38%, #07172f 0 6px, transparent 7px),
+    radial-gradient(circle at 50% 82%, #07172f 0 13px, transparent 14px),
+    linear-gradient(180deg, #eaf4ff, #35d4ff);
 }
 
 .file-pill span {
@@ -1064,9 +1214,27 @@ input:focus {
   font-weight: 800;
 }
 
-.file-pill input {
-  max-width: 100%;
+.file-pill small {
   color: var(--muted);
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-pill input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.complete-verification-step {
+  justify-self: end;
+}
+
+.verification-submit.is-hidden {
+  display: none;
 }
 
 body.dark .driver-verification-card {
@@ -1084,10 +1252,14 @@ body.dark .file-pill span {
 
 body.dark .verification-step,
 body.dark .verification-summary,
-body.dark .verification-grid input,
+body.dark .icon-field,
 body.dark .file-pill {
   border-color: rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+body.dark .verification-step-header {
   color: #fff;
 }
 
