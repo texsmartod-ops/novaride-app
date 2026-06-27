@@ -766,12 +766,21 @@ function normalizeRouteStop(stop = {}) {
   const coordinates = stop.coordinates || stop.center || stop.point || null;
   return {
     label: stop.label || stop.address || "",
-    coordinates: Array.isArray(coordinates) ? coordinates : null,
+    coordinates: normalizeRouteCoordinates(coordinates),
   };
 }
 
 function getRouteStops() {
   return (mapPoints.stops || []).map(normalizeRouteStop).filter((stop) => Array.isArray(stop.coordinates));
+}
+
+function normalizeRouteCoordinates(coordinates) {
+  if (!Array.isArray(coordinates) || coordinates.length !== 2) return null;
+  const point = coordinates.map(Number);
+  if (point.some(Number.isNaN)) return null;
+  const [lng, lat] = point;
+  if (lng < 29.9 || lng > 31.2 || lat < 45.9 || lat > 46.9) return null;
+  return point;
 }
 
 function renderStopsList() {
@@ -968,11 +977,18 @@ function installRouteLayer() {
 async function updateRouteLine() {
   if (!novaMap || !mapPoints.a || !mapPoints.b) return;
 
-  const routePoints = [mapPoints.a, ...getRouteStops().map((stop) => stop.coordinates), mapPoints.b];
+  const routePoints = [mapPoints.a, ...getRouteStops().map((stop) => stop.coordinates), mapPoints.b]
+    .map(normalizeRouteCoordinates)
+    .filter(Boolean);
+  if (routePoints.length < 2) return;
+
   const directRoute = routePoints;
+  const isCompactMap = window.matchMedia("(max-width: 760px)").matches;
   const detailPadding = $(".workspace")?.classList.contains("driver-order-view")
-    ? { top: 92, right: 70, bottom: 92, left: 70 }
-    : { top: 120, right: 460, bottom: 180, left: 80 };
+    ? { top: 76, right: isCompactMap ? 36 : 70, bottom: 86, left: isCompactMap ? 36 : 70 }
+    : isCompactMap
+      ? { top: 78, right: 36, bottom: 210, left: 36 }
+      : { top: 120, right: 460, bottom: 180, left: 80 };
 
   try {
     const coordinates = routePoints.map((point) => point.join(",")).join(";");
@@ -1028,20 +1044,28 @@ function setAddressPoint(point, coordinates, label) {
   const stopIndex = getStopIndex(point);
 
   if (stopIndex >= 0) {
-    mapPoints.stops[stopIndex] = { label, coordinates };
+    const safeCoordinates = normalizeRouteCoordinates(coordinates);
+    if (!safeCoordinates) return;
+    mapPoints.stops[stopIndex] = { label, coordinates: safeCoordinates };
     const input = $(`#stopsList [data-stop-index="${stopIndex}"]`);
-    if (input) input.value = label;
+    if (input) {
+      input.value = label;
+      input.dataset.selectedLabel = label;
+    }
     hideAddressSuggestions(point);
     renderStopMarkers();
     updateRouteLine();
     return;
   }
 
-  mapPoints[point] = coordinates;
+  const safeCoordinates = normalizeRouteCoordinates(coordinates);
+  if (!safeCoordinates) return;
+  mapPoints[point] = safeCoordinates;
   const marker = point === "a" ? pickupMarker : destinationMarker;
   const input = point === "a" ? $("#fromInput") : $("#toInput");
-  marker?.setLngLat(coordinates);
+  marker?.setLngLat(safeCoordinates);
   input.value = label;
+  input.dataset.selectedLabel = label;
   hideAddressSuggestions(point);
   renderStopMarkers();
   updateRouteLine();
@@ -1076,6 +1100,8 @@ async function geocodeStop(input) {
   const cleanQuery = input.value.trim();
   const index = Number(input.dataset.stopIndex || 0);
   if (!cleanQuery || !window.mapboxgl) return;
+  const currentStop = normalizeRouteStop(mapPoints.stops[index]);
+  if (currentStop.coordinates && input.dataset.selectedLabel === cleanQuery) return;
 
   try {
     const knownPlace = ODESSA_PLACES.find((place) => matchesLocalPlace(place, cleanQuery) || cleanQuery.toLowerCase().includes(place.name.toLowerCase()));
@@ -2381,18 +2407,9 @@ async function restoreDriverView() {
   return false;
 }
 
-function showDriverCarOnMap(order) {
-  if (!novaMap || !order?.a || !order?.b) return;
-  const progress = ((Date.now() / 1000) % 30) / 30;
-  const start = Array.isArray(order.driver?.location) ? order.driver.location : [order.a[0] - 0.018, order.a[1] - 0.012];
-  const finish = order.a;
-  const lng = start[0] + (finish[0] - start[0]) * progress;
-  const lat = start[1] + (finish[1] - start[1]) * progress;
-  if (!driverCarMarker) {
-    driverCarMarker = new mapboxgl.Marker({ element: createDriverMarker() }).setLngLat([lng, lat]).addTo(novaMap);
-  } else {
-    driverCarMarker.setLngLat([lng, lat]);
-  }
+function showDriverCarOnMap() {
+  driverCarMarker?.remove();
+  driverCarMarker = null;
 }
 
 async function createRideOrder() {
@@ -2576,21 +2593,10 @@ function initMapboxMap() {
 
     novaMap.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
 
-    const route = [mapPoints.a, [30.7413, 46.4738], [30.7516, 46.4544], mapPoints.b];
-
     pickupMarker = new mapboxgl.Marker({ element: createMapMarker("A", "pickup"), draggable: false }).setLngLat(mapPoints.a).addTo(novaMap);
     destinationMarker = new mapboxgl.Marker({ element: createMapMarker("B", "destination"), draggable: false })
       .setLngLat(mapPoints.b)
       .addTo(novaMap);
-
-    [
-      [30.7206, 46.492],
-      [30.739, 46.477],
-      [30.755, 46.463],
-      [30.711, 46.469],
-    ].forEach((point) => {
-      new mapboxgl.Marker({ element: createDriverMarker() }).setLngLat(point).addTo(novaMap);
-    });
 
     novaMap.on("load", () => {
       $("#mapCanvas").classList.add("has-real-map");
