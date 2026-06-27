@@ -1,4 +1,4 @@
-const CACHE_NAME = "novaride-shell-v10";
+const CACHE_NAME = "novaride-shell-v11";
 const SHELL_ASSETS = [
   "/",
   "/index.html",

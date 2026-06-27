@@ -1113,7 +1113,7 @@ input:focus {
 
 .verification-grid {
   display: grid;
-  grid-template-columns: 1fr 0.48fr;
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 
@@ -1129,49 +1129,71 @@ input:focus {
 
 .icon-field {
   display: grid;
-  grid-template-columns: 34px 1fr;
+  grid-template-columns: 58px 1fr;
+  grid-template-rows: auto auto;
+  gap: 3px 12px;
   align-items: center;
-  padding: 0 12px;
+  min-height: 66px;
+  padding: 10px 12px;
 }
 
 .icon-field span {
-  width: 22px;
-  height: 22px;
-  opacity: 0.9;
+  grid-row: 1 / span 2;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 1000;
+  letter-spacing: 0;
+  opacity: 1;
+}
+
+.icon-field em {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1.1;
 }
 
 .icon-field input {
   min-width: 0;
-  height: 46px;
+  height: 27px;
   border: 0;
   background: transparent;
   color: inherit;
+  font-size: 1rem;
+  font-weight: 800;
   outline: 0;
 }
 
 .car-field span {
-  border-radius: 12px 14px 5px 5px;
-  background:
-    radial-gradient(circle at 5px 19px, #07172f 0 3px, transparent 4px),
-    radial-gradient(circle at 17px 19px, #07172f 0 3px, transparent 4px),
-    linear-gradient(135deg, #dff6ff, #1d67ff);
+  background: linear-gradient(135deg, #07172f, #1d67ff);
 }
 
 .year-field span {
-  border: 2px solid #1d67ff;
-  border-radius: 7px;
-  box-shadow: inset 0 6px 0 rgba(29, 103, 255, 0.18);
+  border: 1px solid rgba(29, 103, 255, 0.25);
+  background: #eef6ff;
+  color: #1d67ff;
+  font-size: 0.72rem;
+  box-shadow: inset 0 -10px 18px rgba(29, 103, 255, 0.1);
 }
 
 .color-field span {
   border-radius: 50%;
   background: conic-gradient(from 40deg, #1d67ff, #35d4ff, #16c784, #f59e0b, #ef4444, #1d67ff);
+  text-shadow: 0 1px 6px rgba(7, 23, 47, 0.65);
 }
 
 .plate-field span {
   border: 2px solid #07172f;
-  border-radius: 5px;
   background: linear-gradient(90deg, #1d67ff 0 26%, #fff 26%);
+  color: #07172f;
+  font-size: 1.25rem;
 }
 
 .file-pill {
@@ -1231,6 +1253,12 @@ input:focus {
 
 .complete-verification-step {
   justify-self: end;
+}
+
+.complete-verification-step:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
 }
 
 .verification-submit.is-hidden {

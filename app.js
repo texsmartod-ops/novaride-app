@@ -1553,12 +1553,12 @@ function renderDriverVerificationGate(verification = getDriverVerification()) {
         </button>
         <div class="verification-step-body">
           <div class="verification-grid">
-            <label class="icon-field car-field"><span></span><input name="transport" placeholder="Марка и модель" value="${escapeHtml(vehicle.transport || "")}" required /></label>
-            <label class="icon-field year-field"><span></span><input name="year" placeholder="Год" inputmode="numeric" value="${escapeHtml(vehicle.year || "")}" required /></label>
-            <label class="icon-field color-field"><span></span><input name="color" placeholder="Цвет" value="${escapeHtml(vehicle.color || "")}" required /></label>
-            <label class="icon-field plate-field"><span></span><input name="plate" placeholder="Номер авто" value="${escapeHtml(vehicle.plate || "")}" required /></label>
+            <label class="icon-field car-field"><span>АВТО</span><em>Марка и модель</em><input name="transport" placeholder="Например: Toyota Camry" value="${escapeHtml(vehicle.transport || "")}" required /></label>
+            <label class="icon-field year-field"><span>ГОД</span><em>Год выпуска</em><input name="year" placeholder="Например: 2020" inputmode="numeric" value="${escapeHtml(vehicle.year || "")}" required /></label>
+            <label class="icon-field color-field"><span>ЦВЕТ</span><em>Цвет транспорта</em><input name="color" placeholder="Например: Черный" value="${escapeHtml(vehicle.color || "")}" required /></label>
+            <label class="icon-field plate-field"><span>№</span><em>Номер транспорта</em><input name="plate" placeholder="Например: BH1234AA" value="${escapeHtml(vehicle.plate || "")}" required /></label>
           </div>
-          <button class="mini-action complete-verification-step" type="button" data-complete-step="1">Готово</button>
+          <button class="mini-action complete-verification-step" type="button" data-complete-step="1" disabled>Готово</button>
         </div>
       </div>
 
@@ -1572,7 +1572,7 @@ function renderDriverVerificationGate(verification = getDriverVerification()) {
         <div class="verification-step-body">
           <label class="file-pill document-field"><i></i><span>Передняя сторона</span><small data-file-name="techFront">Выбрать фото</small><input name="techFront" type="file" accept="image/*" required /></label>
           <label class="file-pill document-field back"><i></i><span>Обратная сторона</span><small data-file-name="techBack">Выбрать фото</small><input name="techBack" type="file" accept="image/*" required /></label>
-          <button class="mini-action complete-verification-step" type="button" data-complete-step="2">Готово</button>
+          <button class="mini-action complete-verification-step" type="button" data-complete-step="2" disabled>Готово</button>
         </div>
       </div>
 
@@ -1585,7 +1585,7 @@ function renderDriverVerificationGate(verification = getDriverVerification()) {
         </button>
         <div class="verification-step-body">
           <label class="file-pill face-field"><i></i><span>Сделать или выбрать фото</span><small data-file-name="facePhoto">Открыть камеру</small><input name="facePhoto" type="file" accept="image/*" capture="user" required /></label>
-          <button class="mini-action complete-verification-step" type="button" data-complete-step="3">Готово</button>
+          <button class="mini-action complete-verification-step" type="button" data-complete-step="3" disabled>Готово</button>
         </div>
       </div>
 
@@ -1621,6 +1621,11 @@ function openVerificationStep(form, step) {
 }
 
 function updateVerificationSubmit(form) {
+  if (!form) return;
+  [1, 2, 3].forEach((step) => {
+    const button = form.querySelector(`[data-complete-step="${step}"]`);
+    if (button) button.disabled = !isVerificationStepComplete(form, step);
+  });
   const allDone = [1, 2, 3].every((step) => isVerificationStepComplete(form, step));
   form.querySelector(".verification-submit")?.classList.toggle("is-hidden", !allDone);
 }
@@ -1664,15 +1669,15 @@ async function showDriverVerificationGate() {
   $("#driverPanel").classList.remove("order-detail-mode");
   $("#screenTitle").textContent = "Верификация";
   $("#driverContent").innerHTML = renderDriverVerificationGate(await refreshDriverVerificationStatus());
+  updateVerificationSubmit($("#driverVerificationForm"));
   $("#sideMenu").classList.remove("is-open");
 }
 
 async function showDriverMode() {
   state.driverMode = true;
   updateMenuForRole();
-  const verification = await refreshDriverVerificationStatus();
+  await refreshDriverVerificationStatus();
   if (!isDriverApproved()) {
-    $("#driverContent").innerHTML = renderDriverVerificationGate(verification);
     showDriverVerificationGate();
     return;
   }
