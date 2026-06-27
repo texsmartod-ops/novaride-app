@@ -808,14 +808,26 @@ async function listAdminRideOrders() {
 async function listRideHistory(destination, role = "passenger") {
   const user = await findUserByDestination(destination);
   const phone = destination && destination.startsWith("+") ? destination : "";
+  const driverKey = String(destination || "").trim();
+  const driverName = String(user?.name || "").trim();
   const pool = await ensurePostgres();
 
   if (pool) {
     const result =
       role === "driver"
         ? await pool.query(
-            "SELECT * FROM ride_orders WHERE status = 'completed' AND driver_phone = $1 ORDER BY completed_at DESC NULLS LAST, created_at DESC LIMIT 100",
-            [phone],
+            `
+              SELECT * FROM ride_orders
+              WHERE status = 'completed'
+                AND (
+                  driver_phone = $1
+                  OR driver_phone = $2
+                  OR ($3 <> '' AND driver_name = $3)
+                )
+              ORDER BY completed_at DESC NULLS LAST, created_at DESC
+              LIMIT 100
+            `,
+            [phone, driverKey, driverName],
           )
         : await pool.query(
             "SELECT * FROM ride_orders WHERE status = 'completed' AND (user_id = $1 OR passenger_phone = $2) ORDER BY completed_at DESC NULLS LAST, created_at DESC LIMIT 100",
@@ -827,7 +839,12 @@ async function listRideHistory(destination, role = "passenger") {
   return readOrders()
     .filter((order) => {
       if (order.status !== "completed") return false;
-      if (role === "driver") return order.driver?.phone && order.driver.phone === phone;
+      if (role === "driver") {
+        return (
+          (order.driver?.phone && (order.driver.phone === phone || order.driver.phone === driverKey)) ||
+          (driverName && order.driver?.name === driverName)
+        );
+      }
       return order.userId === user?.id || (phone && order.passengerPhone === phone);
     })
     .sort((a, b) => new Date(b.completedAt || b.createdAt || 0) - new Date(a.completedAt || a.createdAt || 0))

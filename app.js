@@ -187,11 +187,11 @@ const driverTabs = {
 
 const driverSections = {
   history: {
-    title: "Заказы",
+    title: "История поездок",
     html: `
-      <div class="section-hero driver-hero"><span>Мои рейсы</span><h2>Заказы</h2><p>Поездки, которые вы уже выполнили как водитель.</p></div>
-      <div class="driver-feed" id="driverHistoryList">
-        <article class="driver-empty-card">Загружаем завершенные поездки...</article>
+      <div class="section-hero driver-hero"><span>Мои рейсы</span><h2>История поездок</h2><p>Поездки, которые вы уже выполнили как водитель.</p></div>
+      <div class="feature-grid" id="driverHistoryList">
+        <article class="list-card"><strong>Загружаем историю...</strong><span>Здесь появятся завершенные реальные поездки.</span><em>NovaRide</em></article>
       </div>
     `,
   },
@@ -1674,7 +1674,7 @@ function renderHistoryCard(order, role) {
   const isDriver = role === "driver";
   const person = isDriver ? order.passengerName || "Клиент" : order.driver?.name || "Водитель";
   const rating = isDriver ? order.driverTripRating || order.passengerRating || 5 : order.passengerTripRating || order.driver?.rating || 4.86;
-  const className = isDriver ? "driver-order-card history-order-card" : "list-card history-order-card";
+  const className = "list-card history-order-card";
 
   return `
     <article class="${className}" data-history-order="${escapeHtml(order.id)}" data-history-role="${role}" tabindex="0">
@@ -1692,7 +1692,7 @@ async function loadRideHistory(role = state.driverMode ? "driver" : "passenger")
   if (!list || !destination) return;
 
   list.innerHTML = role === "driver"
-    ? `<article class="driver-empty-card">Загружаем завершенные поездки...</article>`
+    ? `<article class="list-card"><strong>Загружаем историю...</strong><span>Секунду, ищем завершенные поездки.</span><em>NovaRide</em></article>`
     : `<article class="list-card"><strong>Загружаем историю...</strong><span>Секунду, ищем завершенные поездки.</span><em>NovaRide</em></article>`;
 
   try {
@@ -1703,11 +1703,11 @@ async function loadRideHistory(role = state.driverMode ? "driver" : "passenger")
     list.innerHTML = orders.length
       ? orders.map((order) => renderHistoryCard(order, role)).join("")
       : role === "driver"
-        ? `<article class="driver-empty-card">Завершенных поездок пока нет.</article>`
+        ? `<article class="list-card"><strong>История пока пустая</strong><span>После завершения поездки она появится здесь.</span><em>0 поездок</em></article>`
         : `<article class="list-card"><strong>История пока пустая</strong><span>После завершения поездки она появится здесь.</span><em>0 поездок</em></article>`;
   } catch (error) {
     list.innerHTML = role === "driver"
-      ? `<article class="driver-empty-card">Не удалось загрузить историю.</article>`
+      ? `<article class="list-card"><strong>История недоступна</strong><span>${escapeHtml(error.message)}</span><em>Ошибка</em></article>`
       : `<article class="list-card"><strong>История недоступна</strong><span>${escapeHtml(error.message)}</span><em>Ошибка</em></article>`;
   }
 }
@@ -2465,7 +2465,7 @@ function updateMenuForRole() {
   const addressesItem = $('.menu-item[data-section="addresses"]');
 
   rideItem.textContent = state.driverMode ? "Лента" : "Поездка";
-  historyItem.textContent = state.driverMode ? "Заказы" : "История заказов";
+  historyItem.textContent = state.driverMode ? "История поездок" : "История заказов";
   addressesItem.classList.toggle("is-hidden", state.driverMode);
   $("#driverModeBtn").textContent = state.driverMode ? "Стать пассажиром" : "Стать водителем";
   $(".profile-card span").textContent = state.driverMode ? "Рейтинг водителя 4.86" : `Рейтинг ${state.currentUser?.rating || 5}`;
