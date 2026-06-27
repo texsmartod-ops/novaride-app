@@ -974,6 +974,31 @@ function installRouteLayer() {
   });
 }
 
+async function getRouteSegment(start, finish) {
+  const fallback = {
+    coordinates: [start, finish],
+    distanceKm: getDirectDistanceKm(start, finish),
+  };
+
+  try {
+    const coordinates = [start, finish].map((point) => point.join(",")).join(";");
+    const response = await fetch(
+      `https://api.mapbox.com/directions/v5/mapbox/driving/${coordinates}?geometries=geojson&overview=full&steps=false&alternatives=false&language=${getMapLanguage()}&access_token=${MAPBOX_TOKEN}`,
+    );
+    const data = await response.json();
+    const route = data.routes?.[0];
+    const routeCoordinates = route?.geometry?.coordinates;
+    if (!Array.isArray(routeCoordinates) || routeCoordinates.length < 2) return fallback;
+
+    return {
+      coordinates: [start, ...routeCoordinates, finish],
+      distanceKm: route.distance ? route.distance / 1000 : fallback.distanceKm,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 async function updateRouteLine() {
   if (!novaMap || !mapPoints.a || !mapPoints.b) return;
 
@@ -991,15 +1016,12 @@ async function updateRouteLine() {
       : { top: 120, right: 460, bottom: 180, left: 80 };
 
   try {
-    const coordinates = routePoints.map((point) => point.join(",")).join(";");
-    const response = await fetch(
-      `https://api.mapbox.com/directions/v5/mapbox/driving/${coordinates}?geometries=geojson&overview=full&steps=false&alternatives=false&language=${getMapLanguage()}&access_token=${MAPBOX_TOKEN}`,
-    );
-    const data = await response.json();
-    const route = data.routes?.[0]?.geometry?.coordinates || directRoute;
-    const distanceKm = data.routes?.[0]?.distance
-      ? data.routes[0].distance / 1000
-      : routePoints.slice(1).reduce((sum, point, index) => sum + getDirectDistanceKm(routePoints[index], point), 0);
+    const segments = await Promise.all(routePoints.slice(1).map((point, index) => getRouteSegment(routePoints[index], point)));
+    const route = segments.reduce((line, segment, index) => {
+      const nextCoordinates = index === 0 ? segment.coordinates : segment.coordinates.slice(1);
+      return line.concat(nextCoordinates);
+    }, []);
+    const distanceKm = segments.reduce((sum, segment) => sum + segment.distanceKm, 0);
     setRouteGeoJson(route);
     updateTripPrice(distanceKm);
 
