@@ -1,9 +1,9 @@
-const CACHE_NAME = "novaride-shell-v6";
+const CACHE_NAME = "novaride-shell-v7";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
-  "/styles.css?v=20260627-005",
-  "/app.js?v=20260627-005",
+  "/styles.css?v=20260627-006",
+  "/app.js?v=20260627-006",
   "/manifest.webmanifest",
   "/assets/novaride-icon.svg",
   "/assets/novaride-maskable.svg",
