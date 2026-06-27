@@ -956,6 +956,141 @@ input:focus {
   margin-top: 3px;
 }
 
+.profile-card.is-driver-verified .avatar {
+  position: relative;
+}
+
+.profile-card.is-driver-verified .avatar::after {
+  content: "✓";
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #07172f;
+  border-radius: 50%;
+  background: #16c784;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 1000;
+}
+
+.driver-verification-card {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid rgba(29, 103, 255, 0.14);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 100% 0, rgba(53, 212, 255, 0.16), transparent 34%),
+    linear-gradient(180deg, #ffffff, #f5f9ff);
+  box-shadow: 0 18px 46px rgba(20, 43, 86, 0.12);
+}
+
+.driver-verification-card h2 {
+  margin: 0;
+  color: var(--midnight);
+  font-size: 1.35rem;
+}
+
+.driver-verification-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.verification-badge {
+  justify-self: start;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--blue), #35d4ff);
+  color: #fff;
+  font-weight: 900;
+}
+
+.verification-badge.waiting {
+  background: linear-gradient(135deg, #7c3cff, var(--blue));
+}
+
+.verification-badge.rejected {
+  background: linear-gradient(135deg, #ef4444, #f97316);
+}
+
+.verification-step,
+.verification-summary {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(166, 184, 214, 0.42);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.verification-step strong {
+  color: var(--midnight);
+}
+
+.verification-grid {
+  display: grid;
+  grid-template-columns: 1fr 0.48fr;
+  gap: 10px;
+}
+
+.verification-grid input,
+.file-pill {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid rgba(166, 184, 214, 0.7);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--midnight);
+}
+
+.verification-grid input {
+  padding: 0 13px;
+}
+
+.file-pill {
+  display: grid;
+  gap: 6px;
+  padding: 11px 13px;
+  cursor: pointer;
+}
+
+.file-pill span {
+  color: var(--midnight);
+  font-weight: 800;
+}
+
+.file-pill input {
+  max-width: 100%;
+  color: var(--muted);
+}
+
+body.dark .driver-verification-card {
+  border-color: rgba(53, 212, 255, 0.16);
+  background:
+    radial-gradient(circle at 100% 0, rgba(53, 212, 255, 0.13), transparent 35%),
+    linear-gradient(180deg, #0b1b34, #07172f);
+}
+
+body.dark .driver-verification-card h2,
+body.dark .verification-step strong,
+body.dark .file-pill span {
+  color: #f8fbff;
+}
+
+body.dark .verification-step,
+body.dark .verification-summary,
+body.dark .verification-grid input,
+body.dark .file-pill {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
 .menu-list {
   display: grid;
   gap: 6px;

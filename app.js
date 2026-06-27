@@ -1484,10 +1484,163 @@ function renderSection(section, source = sections) {
   return typeof content === "function" ? content() : content;
 }
 
-function showDriverMode() {
+function getDriverVerification() {
+  return state.currentUser?.driverVerification || { status: "none" };
+}
+
+function isDriverApproved() {
+  return Boolean(state.currentUser?.driverVerified) || getDriverVerification().status === "approved";
+}
+
+async function refreshDriverVerificationStatus() {
+  const destination = state.currentUser?.destination || state.authDestination;
+  if (!destination) return getDriverVerification();
+
+  try {
+    const response = await fetch(`/api/driver-verification?destination=${encodeURIComponent(destination)}`);
+    const data = await response.json();
+    if (response.ok && data.ok && data.user) {
+      state.currentUser = data.user;
+      savePersistentAuth(data.user);
+      updateMenuForRole();
+      return data.verification || data.user.driverVerification || { status: "none" };
+    }
+  } catch {
+    // Keep local status if the server is temporarily unavailable.
+  }
+
+  return getDriverVerification();
+}
+
+function renderDriverVerificationGate(verification = getDriverVerification()) {
+  const status = verification.status || "none";
+  const isPending = status === "pending";
+  const isRejected = status === "rejected";
+  const vehicle = verification.vehicle || {};
+
+  if (isPending) {
+    return `
+      <div class="driver-verification-card">
+        <div class="verification-badge waiting">На проверке</div>
+        <h2>Ждите одобрение администрации</h2>
+        <p>Ваш профиль водителя на проверке. После одобрения лента заказов откроется автоматически.</p>
+        <div class="verification-summary">
+          <span>${escapeHtml(vehicle.transport || "Транспорт")}</span>
+          <strong>${escapeHtml(vehicle.plate || "")}</strong>
+        </div>
+        <button class="primary-action refresh-driver-verification" type="button">Проверить статус</button>
+      </div>
+    `;
+  }
+
+  return `
+    <form class="driver-verification-card" id="driverVerificationForm">
+      <div class="verification-badge ${isRejected ? "rejected" : ""}">${isRejected ? "Отклонено" : "Верификация водителя"}</div>
+      <h2>${isRejected ? "Документы отклонены" : "Пройдите проверку"}</h2>
+      <p>${isRejected ? escapeHtml(verification.rejectionReason || "Попробуйте пройти верификацию еще раз.") : "Заполните 3 пункта, и заявка уйдет администратору на проверку."}</p>
+
+      <div class="verification-step">
+        <strong>1. Транспорт</strong>
+        <div class="verification-grid">
+          <input name="transport" placeholder="Марка и модель" value="${escapeHtml(vehicle.transport || "")}" required />
+          <input name="year" placeholder="Год" inputmode="numeric" value="${escapeHtml(vehicle.year || "")}" required />
+          <input name="color" placeholder="Цвет" value="${escapeHtml(vehicle.color || "")}" required />
+          <input name="plate" placeholder="Номер авто" value="${escapeHtml(vehicle.plate || "")}" required />
+        </div>
+      </div>
+
+      <div class="verification-step">
+        <strong>2. Техпаспорт</strong>
+        <label class="file-pill"><span>Передняя сторона</span><input name="techFront" type="file" accept="image/*" required /></label>
+        <label class="file-pill"><span>Обратная сторона</span><input name="techBack" type="file" accept="image/*" required /></label>
+      </div>
+
+      <div class="verification-step">
+        <strong>3. Верификация лица</strong>
+        <label class="file-pill"><span>Фото лица</span><input name="facePhoto" type="file" accept="image/*" capture="user" required /></label>
+      </div>
+
+      <button class="primary-action" type="submit">Отправить на проверку</button>
+    </form>
+  `;
+}
+
+async function showDriverVerificationGate() {
   state.driverMode = true;
   updateMenuForRole();
+  clearInterval(driverOrdersTimer);
+  clearInterval(driverAcceptedTimer);
+  $(".workspace").classList.remove("driver-order-view");
+  $(".content-grid").classList.add("section-mode");
+  $(".map-panel").classList.add("is-hidden");
+  $("#ridePanel").classList.add("is-hidden");
+  $("#infoPanel").classList.add("is-hidden");
+  $("#driverPanel").classList.remove("is-hidden");
+  $("#driverPanel").classList.remove("order-detail-mode");
+  $("#screenTitle").textContent = "Верификация";
+  $("#driverContent").innerHTML = renderDriverVerificationGate(await refreshDriverVerificationStatus());
+  $("#sideMenu").classList.remove("is-open");
+}
+
+async function showDriverMode() {
+  state.driverMode = true;
+  updateMenuForRole();
+  const verification = await refreshDriverVerificationStatus();
+  if (!isDriverApproved()) {
+    $("#driverContent").innerHTML = renderDriverVerificationGate(verification);
+    showDriverVerificationGate();
+    return;
+  }
   showDriverContent("feed");
+}
+
+async function submitDriverVerification(form) {
+  const button = form.querySelector("button[type='submit']");
+  const formData = new FormData(form);
+  const destination = state.currentUser?.destination || state.authDestination;
+  if (!destination) {
+    alert("Сначала войдите в аккаунт.");
+    return;
+  }
+
+  const payload = {
+    destination,
+    vehicle: {
+      transport: formData.get("transport"),
+      year: formData.get("year"),
+      color: formData.get("color"),
+      plate: formData.get("plate"),
+    },
+    documents: {
+      techPassportFront: formData.get("techFront")?.name || "",
+      techPassportBack: formData.get("techBack")?.name || "",
+    },
+    face: {
+      photo: formData.get("facePhoto")?.name || "",
+    },
+  };
+
+  setButtonLoading(button, true, "Отправляем...");
+  try {
+    const response = await fetch("/api/driver-verification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "Не удалось отправить заявку.");
+    }
+
+    state.currentUser = data.user;
+    savePersistentAuth(data.user);
+    updateMenuForRole();
+    $("#driverContent").innerHTML = renderDriverVerificationGate(data.verification || data.user.driverVerification);
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    setButtonLoading(button, false);
+  }
 }
 
 function showPassengerMode() {
@@ -1623,6 +1776,7 @@ function getDriverProfilePayload() {
   const phone = destination.startsWith("+") ? destination : "+380";
 
   return {
+    destination,
     driverName: name,
     driverPhone: phone,
     driverRating: 4.86,
@@ -1956,6 +2110,11 @@ function applyOrderToMap(order) {
 }
 
 function showDriverContent(tabName) {
+  if (!isDriverApproved()) {
+    showDriverVerificationGate();
+    return;
+  }
+
   localStorage.setItem(DRIVER_TAB_KEY, tabName);
   if (tabName === "feed") {
     localStorage.removeItem(DRIVER_ACTIVE_ORDER_KEY);
@@ -2566,12 +2725,18 @@ function updateMenuForRole() {
   const rideItem = $('.menu-item[data-section="ride"]');
   const historyItem = $('.menu-item[data-section="history"]');
   const addressesItem = $('.menu-item[data-section="addresses"]');
+  const profileCard = $(".profile-card");
 
   rideItem.textContent = state.driverMode ? "Лента" : "Поездка";
   historyItem.textContent = state.driverMode ? "История поездок" : "История заказов";
   addressesItem.classList.toggle("is-hidden", state.driverMode);
   $("#driverModeBtn").textContent = state.driverMode ? "Стать пассажиром" : "Стать водителем";
-  $(".profile-card span").textContent = state.driverMode ? "Рейтинг водителя 4.86" : `Рейтинг ${state.currentUser?.rating || 5}`;
+  profileCard.classList.toggle("is-driver-verified", state.driverMode && isDriverApproved());
+  $(".profile-card span").textContent = state.driverMode
+    ? isDriverApproved()
+      ? "Водитель подтвержден · рейтинг 4.86"
+      : "Верификация водителя"
+    : `Рейтинг ${state.currentUser?.rating || 5}`;
 }
 
 function saveAddress(button) {
@@ -2805,6 +2970,12 @@ function bindEvents() {
   $("#driverModeBtn").addEventListener("click", () => (state.driverMode ? showPassengerMode() : showDriverMode()));
   $$(".driver-tab").forEach((tab) => tab.addEventListener("click", () => setDriverTab(tab.dataset.driverTab)));
   $("#driverPanel").addEventListener("click", (event) => {
+    const refreshVerificationButton = event.target.closest(".refresh-driver-verification");
+    if (refreshVerificationButton) {
+      showDriverMode();
+      return;
+    }
+
     const openChatButton = event.target.closest(".open-chat");
     if (openChatButton) {
       focusRideChat(openChatButton);
@@ -2877,6 +3048,12 @@ function bindEvents() {
       event.preventDefault();
       sendRideMessage(input.dataset.chatInput, "driver");
     }
+  });
+  $("#driverPanel").addEventListener("submit", (event) => {
+    const form = event.target.closest("#driverVerificationForm");
+    if (!form) return;
+    event.preventDefault();
+    submitDriverVerification(form);
   });
   ["pointerdown", "touchstart", "focusin", "input"].forEach((eventName) => {
     $("#driverPanel").addEventListener(eventName, (event) => {

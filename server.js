@@ -154,6 +154,8 @@ async function ensurePostgres() {
         gender TEXT NOT NULL,
         rating NUMERIC DEFAULT 5,
         saved_addresses JSONB DEFAULT '[]'::jsonb,
+        driver_verified BOOLEAN DEFAULT FALSE,
+        driver_verification JSONB DEFAULT '{"status":"none"}'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
@@ -220,6 +222,8 @@ async function ensurePostgres() {
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_trip_rating INTEGER;
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS passenger_rated_at TIMESTAMPTZ;
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_rated_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS driver_verified BOOLEAN DEFAULT FALSE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS driver_verification JSONB DEFAULT '{"status":"none"}'::jsonb;
     `);
   }
 
@@ -239,6 +243,8 @@ function userFromRow(row) {
     gender: row.gender,
     rating: Number(row.rating || 5),
     savedAddresses: Array.isArray(row.saved_addresses) ? row.saved_addresses : [],
+    driverVerified: Boolean(row.driver_verified),
+    driverVerification: row.driver_verification && typeof row.driver_verification === "object" ? row.driver_verification : { status: "none" },
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
     updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
   };
@@ -295,7 +301,7 @@ function readJson(req) {
     let body = "";
     req.on("data", (chunk) => {
       body += chunk;
-      if (body.length > 10000) {
+      if (body.length > 200000) {
         req.destroy();
         reject(new Error("Слишком большой запрос."));
       }
@@ -362,6 +368,8 @@ function publicUser(user) {
     gender: user.gender,
     rating: user.rating,
     savedAddresses: user.savedAddresses || [],
+    driverVerified: Boolean(user.driverVerified),
+    driverVerification: user.driverVerification || { status: "none" },
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -572,6 +580,8 @@ async function upsertUser({ destination, channel, name, birthDate, gender }) {
     gender: gender === "female" ? "female" : "male",
     rating: current?.rating || 5,
     savedAddresses: current?.savedAddresses?.length ? current.savedAddresses : defaultSavedAddresses,
+    driverVerified: Boolean(current?.driverVerified),
+    driverVerification: current?.driverVerification || { status: "none" },
     createdAt: current?.createdAt || now,
     updatedAt: now,
   };
@@ -580,9 +590,9 @@ async function upsertUser({ destination, channel, name, birthDate, gender }) {
     const result = await pool.query(
       `
         INSERT INTO users (
-          id, destination, channel, name, birth_date, gender, rating, saved_addresses, created_at, updated_at
+          id, destination, channel, name, birth_date, gender, rating, saved_addresses, driver_verified, driver_verification, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10::jsonb, $11, $12)
         ON CONFLICT (destination) DO UPDATE SET
           channel = EXCLUDED.channel,
           name = EXCLUDED.name,
@@ -602,6 +612,8 @@ async function upsertUser({ destination, channel, name, birthDate, gender }) {
         user.gender,
         user.rating,
         JSON.stringify(user.savedAddresses),
+        user.driverVerified,
+        JSON.stringify(user.driverVerification),
         user.createdAt,
         user.updatedAt,
       ],
@@ -671,6 +683,139 @@ async function listUsers() {
     .slice()
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
     .slice(0, 500);
+}
+
+function normalizeDriverVerificationPayload(payload = {}) {
+  const vehicle = payload.vehicle || {};
+  const documents = payload.documents || {};
+  const face = payload.face || {};
+  const transport = String(vehicle.transport || "").trim().slice(0, 80);
+  const year = String(vehicle.year || "").trim().slice(0, 4);
+  const color = String(vehicle.color || "").trim().slice(0, 40);
+  const plate = String(vehicle.plate || "").trim().toUpperCase().slice(0, 20);
+  const techPassportFront = String(documents.techPassportFront || "").trim().slice(0, 160);
+  const techPassportBack = String(documents.techPassportBack || "").trim().slice(0, 160);
+  const facePhoto = String(face.photo || "").trim().slice(0, 160);
+
+  if (!transport || !year || !color || !plate) {
+    throw new Error("Заполните транспорт, год, цвет и номер авто.");
+  }
+
+  if (!/^\d{4}$/.test(year) || Number(year) < 1990 || Number(year) > new Date().getFullYear() + 1) {
+    throw new Error("Укажите корректный год транспорта.");
+  }
+
+  if (!techPassportFront || !techPassportBack) {
+    throw new Error("Добавьте фото техпаспорта с двух сторон.");
+  }
+
+  if (!facePhoto) {
+    throw new Error("Пройдите верификацию лица.");
+  }
+
+  return {
+    status: "pending",
+    submittedAt: new Date().toISOString(),
+    reviewedAt: "",
+    rejectionReason: "",
+    vehicle: { transport, year, color, plate },
+    documents: { techPassportFront, techPassportBack },
+    face: { photo: facePhoto, verified: true },
+  };
+}
+
+async function saveDriverVerification(destination, payload) {
+  const user = await findUserByDestination(destination);
+  if (!user) {
+    throw new Error("Профиль не найден. Войдите в аккаунт еще раз.");
+  }
+
+  const verification = normalizeDriverVerificationPayload(payload);
+  const updatedAt = new Date().toISOString();
+  const pool = await ensurePostgres();
+
+  if (pool) {
+    const result = await pool.query(
+      "UPDATE users SET driver_verified = FALSE, driver_verification = $1::jsonb, updated_at = $2 WHERE destination = $3 RETURNING *",
+      [JSON.stringify(verification), updatedAt, destination],
+    );
+    return userFromRow(result.rows[0]);
+  }
+
+  const users = readUsers();
+  const index = users.findIndex((item) => item.destination === destination);
+  if (index < 0) {
+    throw new Error("Профиль не найден.");
+  }
+
+  users[index] = {
+    ...users[index],
+    driverVerified: false,
+    driverVerification: verification,
+    updatedAt,
+  };
+  writeUsers(users);
+  return users[index];
+}
+
+async function reviewDriverVerification(destination, decision, reason = "") {
+  const user = await findUserByDestination(destination);
+  if (!user) {
+    throw new Error("Водитель не найден.");
+  }
+
+  const approved = decision === "approved";
+  const verification = {
+    ...(user.driverVerification || { status: "none" }),
+    status: approved ? "approved" : "rejected",
+    reviewedAt: new Date().toISOString(),
+    rejectionReason: approved ? "" : String(reason || "Документы отклонены. Попробуйте пройти верификацию еще раз.").trim(),
+  };
+  const pool = await ensurePostgres();
+
+  if (pool) {
+    const result = await pool.query(
+      "UPDATE users SET driver_verified = $1, driver_verification = $2::jsonb, updated_at = NOW() WHERE destination = $3 RETURNING *",
+      [approved, JSON.stringify(verification), destination],
+    );
+    return userFromRow(result.rows[0]);
+  }
+
+  const users = readUsers();
+  const index = users.findIndex((item) => item.destination === destination);
+  if (index < 0) {
+    throw new Error("Водитель не найден.");
+  }
+
+  users[index] = {
+    ...users[index],
+    driverVerified: approved,
+    driverVerification: verification,
+    updatedAt: new Date().toISOString(),
+  };
+  writeUsers(users);
+  return users[index];
+}
+
+async function listDriverVerificationUsers() {
+  const pool = await ensurePostgres();
+
+  if (pool) {
+    const result = await pool.query(
+      `
+        SELECT * FROM users
+        WHERE COALESCE(driver_verification->>'status', 'none') <> 'none'
+        ORDER BY updated_at DESC
+        LIMIT 300
+      `,
+    );
+    return result.rows.map(userFromRow);
+  }
+
+  return readUsers()
+    .filter((user) => (user.driverVerification?.status || "none") !== "none")
+    .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+    .slice(0, 300);
 }
 
 async function createRideOrder(destination, payload) {
@@ -909,6 +1054,12 @@ async function createRideOffer(orderId, payload) {
 
   if (order.status !== "open") {
     throw new Error(order.status === "expired" ? "Время поиска истекло." : "Этот заказ уже не принимает предложения.");
+  }
+
+  const driverDestination = normalizeDestination(payload.destination || payload.driverPhone);
+  const driverUser = driverDestination ? await findUserByDestination(driverDestination) : null;
+  if (!driverUser?.driverVerified) {
+    throw new Error("Сначала пройдите верификацию водителя.");
   }
 
   const offer = buildDriverPayload(payload, order);
@@ -1633,6 +1784,7 @@ function sendAdminPage(res) {
           <div class="admin-actions">
             <button class="secondary" type="button" id="refreshBtn">Пользователи</button>
             <button class="secondary" type="button" id="ordersBtn">Заказы и чаты</button>
+            <button class="secondary" type="button" id="driversBtn">Водители</button>
           </div>
         </div>
         <div id="tableBox" class="empty">Список появится после входа.</div>
@@ -1646,6 +1798,7 @@ function sendAdminPage(res) {
       const counter = document.getElementById("counter");
       const refreshBtn = document.getElementById("refreshBtn");
       const ordersBtn = document.getElementById("ordersBtn");
+      const driversBtn = document.getElementById("driversBtn");
       let adminPassword = sessionStorage.getItem("novaride_admin_password") || "";
 
       if (adminPassword) {
@@ -1662,6 +1815,12 @@ function sendAdminPage(res) {
 
       refreshBtn.addEventListener("click", loadUsers);
       ordersBtn.addEventListener("click", loadOrders);
+      driversBtn.addEventListener("click", loadDriverVerifications);
+      tableBox.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-driver-review]");
+        if (!button) return;
+        reviewDriver(button.dataset.driverDestination, button.dataset.driverReview);
+      });
 
       function esc(value) {
         return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
@@ -1808,6 +1967,107 @@ function sendAdminPage(res) {
           </table>
         \`;
       }
+
+      async function loadDriverVerifications() {
+        if (!adminPassword) {
+          statusText.textContent = "Введите пароль администратора.";
+          return;
+        }
+
+        statusText.textContent = "Загружаю заявки водителей...";
+        tableBox.className = "empty";
+        tableBox.textContent = "Загрузка...";
+
+        try {
+          const response = await fetch("/api/admin/driver-verifications", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: adminPassword }),
+          });
+          const data = await response.json();
+
+          if (!response.ok || !data.ok) {
+            throw new Error(data.error || "Не удалось загрузить заявки.");
+          }
+
+          renderDriverVerifications(data.drivers || []);
+          statusText.textContent = "Заявки водителей обновлены.";
+        } catch (error) {
+          tableBox.className = "empty error";
+          tableBox.textContent = error.message;
+          statusText.textContent = "Проверьте пароль или настройки сервера.";
+        }
+      }
+
+      function renderDriverVerifications(drivers) {
+        counter.textContent = drivers.length + " заявок";
+        if (!drivers.length) {
+          tableBox.className = "empty";
+          tableBox.textContent = "Пока нет заявок водителей.";
+          return;
+        }
+
+        tableBox.className = "";
+        tableBox.innerHTML = \`
+          <table>
+            <thead>
+              <tr>
+                <th>Статус</th>
+                <th>Водитель</th>
+                <th>Транспорт</th>
+                <th>Документы</th>
+                <th>Лицо</th>
+                <th>Действие</th>
+              </tr>
+            </thead>
+            <tbody>
+              \${drivers.map((user) => {
+                const verification = user.driverVerification || {};
+                const vehicle = verification.vehicle || {};
+                const documents = verification.documents || {};
+                const face = verification.face || {};
+                return \`
+                  <tr>
+                    <td data-label="Статус"><strong>\${esc(verification.status || "none")}</strong><br><span>\${verification.submittedAt ? new Date(verification.submittedAt).toLocaleString("ru-RU") : ""}</span></td>
+                    <td data-label="Водитель">\${esc(user.name)}<br><span class="mono">\${esc(user.destination)}</span><br>Рейтинг \${esc(user.rating)}</td>
+                    <td data-label="Транспорт">\${esc(vehicle.transport || "")}<br>\${esc(vehicle.year || "")} · \${esc(vehicle.color || "")}<br><strong>\${esc(vehicle.plate || "")}</strong></td>
+                    <td data-label="Документы"><div class="addresses"><span>Перед: \${esc(documents.techPassportFront || "нет")}</span><span>Зад: \${esc(documents.techPassportBack || "нет")}</span></div></td>
+                    <td data-label="Лицо">\${esc(face.photo || "нет")}</td>
+                    <td data-label="Действие">
+                      <div class="admin-actions">
+                        <button type="button" data-driver-review="approved" data-driver-destination="\${esc(user.destination)}">Одобрить</button>
+                        <button class="secondary" type="button" data-driver-review="rejected" data-driver-destination="\${esc(user.destination)}">Отклонить</button>
+                      </div>
+                    </td>
+                  </tr>
+                \`;
+              }).join("")}
+            </tbody>
+          </table>
+        \`;
+      }
+
+      async function reviewDriver(destination, decision) {
+        const reason = decision === "rejected" ? prompt("Причина отклонения", "Документы отклонены. Попробуйте еще раз.") || "" : "";
+        statusText.textContent = decision === "approved" ? "Одобряю водителя..." : "Отклоняю заявку...";
+
+        try {
+          const response = await fetch("/api/admin/driver-verifications/review", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: adminPassword, destination, decision, reason }),
+          });
+          const data = await response.json();
+
+          if (!response.ok || !data.ok) {
+            throw new Error(data.error || "Не удалось изменить статус.");
+          }
+
+          await loadDriverVerifications();
+        } catch (error) {
+          statusText.textContent = error.message;
+        }
+      }
     </script>
   </body>
 </html>`);
@@ -1852,6 +2112,90 @@ async function handleAdminOrders(req, res) {
     sendJson(res, 200, { ok: true, orders: orders.map(publicOrder) });
   } catch (error) {
     sendJson(res, 500, { ok: false, error: error.message || "Не удалось загрузить заказы." });
+  }
+}
+
+async function handleAdminDriverVerifications(req, res) {
+  try {
+    const adminPassword = getAdminPassword();
+    if (!adminPassword) {
+      sendJson(res, 503, { ok: false, error: "ADMIN_PASSWORD не настроен в Render Environment." });
+      return;
+    }
+
+    const body = await readJson(req);
+    if (String(body.password || "") !== adminPassword) {
+      sendJson(res, 401, { ok: false, error: "Неверный пароль администратора." });
+      return;
+    }
+
+    const users = await listDriverVerificationUsers();
+    sendJson(res, 200, { ok: true, drivers: users.map(publicUser) });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось загрузить заявки водителей." });
+  }
+}
+
+async function handleAdminReviewDriver(req, res) {
+  try {
+    const adminPassword = getAdminPassword();
+    if (!adminPassword) {
+      sendJson(res, 503, { ok: false, error: "ADMIN_PASSWORD не настроен в Render Environment." });
+      return;
+    }
+
+    const body = await readJson(req);
+    if (String(body.password || "") !== adminPassword) {
+      sendJson(res, 401, { ok: false, error: "Неверный пароль администратора." });
+      return;
+    }
+
+    const destination = normalizeDestination(body.destination);
+    const decision = body.decision === "approved" ? "approved" : "rejected";
+    if (!destination) {
+      throw new Error("Не указан водитель.");
+    }
+
+    const user = await reviewDriverVerification(destination, decision, body.reason);
+    sendJson(res, 200, { ok: true, user: publicUser(user) });
+  } catch (error) {
+    sendJson(res, 400, { ok: false, error: error.message || "Не удалось изменить статус водителя." });
+  }
+}
+
+async function handleDriverVerificationStatus(req, res) {
+  try {
+    const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
+    const destination = normalizeDestination(url.searchParams.get("destination"));
+    if (!destination) {
+      sendJson(res, 400, { ok: false, error: "Не указан аккаунт." });
+      return;
+    }
+
+    const user = await findUserByDestination(destination);
+    if (!user) {
+      sendJson(res, 404, { ok: false, error: "Профиль не найден." });
+      return;
+    }
+
+    sendJson(res, 200, { ok: true, user: publicUser(user), verification: user.driverVerification || { status: "none" } });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось проверить статус водителя." });
+  }
+}
+
+async function handleSubmitDriverVerification(req, res) {
+  try {
+    const body = await readJson(req);
+    const destination = normalizeDestination(body.destination);
+    if (!destination) {
+      throw new Error("Не указан аккаунт.");
+    }
+
+    const user = await saveDriverVerification(destination, body);
+    sendJson(res, 200, { ok: true, user: publicUser(user), verification: user.driverVerification });
+  } catch (error) {
+    sendJson(res, 400, { ok: false, error: error.message || "Не удалось отправить заявку водителя." });
   }
 }
 
@@ -2147,6 +2491,16 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/api/admin/driver-verifications") {
+    handleAdminDriverVerifications(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/admin/driver-verifications/review") {
+    handleAdminReviewDriver(req, res);
+    return;
+  }
+
   if (req.method === "GET" && req.url === "/api/auth/config") {
     handleAuthConfig(req, res);
     return;
@@ -2184,6 +2538,16 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "POST" && req.url === "/api/users/addresses") {
     handleSaveAddresses(req, res);
+    return;
+  }
+
+  if (req.method === "GET" && req.url.startsWith("/api/driver-verification")) {
+    handleDriverVerificationStatus(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/driver-verification") {
+    handleSubmitDriverVerification(req, res);
     return;
   }
 
