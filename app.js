@@ -978,6 +978,8 @@ async function getRouteSegment(start, finish) {
   const fallback = {
     coordinates: [start, finish],
     distanceKm: getDirectDistanceKm(start, finish),
+    snappedStart: start,
+    snappedFinish: finish,
   };
 
   try {
@@ -989,10 +991,14 @@ async function getRouteSegment(start, finish) {
     const route = data.routes?.[0];
     const routeCoordinates = route?.geometry?.coordinates;
     if (!Array.isArray(routeCoordinates) || routeCoordinates.length < 2) return fallback;
+    const snappedStart = normalizeRouteCoordinates(data.waypoints?.[0]?.location) || start;
+    const snappedFinish = normalizeRouteCoordinates(data.waypoints?.[1]?.location) || finish;
 
     return {
-      coordinates: [start, ...routeCoordinates, finish],
+      coordinates: [snappedStart, ...routeCoordinates, snappedFinish],
       distanceKm: route.distance ? route.distance / 1000 : fallback.distanceKm,
+      snappedStart,
+      snappedFinish,
     };
   } catch {
     return fallback;
@@ -1017,11 +1023,21 @@ async function updateRouteLine() {
 
   try {
     const segments = await Promise.all(routePoints.slice(1).map((point, index) => getRouteSegment(routePoints[index], point)));
+    const snappedRoutePoints = [segments[0]?.snappedStart || routePoints[0], ...segments.map((segment, index) => segment.snappedFinish || routePoints[index + 1])];
     const route = segments.reduce((line, segment, index) => {
       const nextCoordinates = index === 0 ? segment.coordinates : segment.coordinates.slice(1);
       return line.concat(nextCoordinates);
     }, []);
     const distanceKm = segments.reduce((sum, segment) => sum + segment.distanceKm, 0);
+    mapPoints.a = snappedRoutePoints[0];
+    mapPoints.b = snappedRoutePoints[snappedRoutePoints.length - 1];
+    pickupMarker?.setLngLat(mapPoints.a);
+    destinationMarker?.setLngLat(mapPoints.b);
+    mapPoints.stops = (mapPoints.stops || []).map((stop, index) => ({
+      ...stop,
+      coordinates: snappedRoutePoints[index + 1] || stop.coordinates,
+    }));
+    renderStopMarkers();
     setRouteGeoJson(route);
     updateTripPrice(distanceKm);
 
