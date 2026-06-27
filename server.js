@@ -765,11 +765,14 @@ async function reviewDriverVerification(destination, decision, reason = "") {
   }
 
   const approved = decision === "approved";
+  const dismissed = decision === "dismissed";
   const verification = {
     ...(user.driverVerification || { status: "none" }),
-    status: approved ? "approved" : "rejected",
+    status: approved ? "approved" : dismissed ? "dismissed" : "rejected",
     reviewedAt: new Date().toISOString(),
-    rejectionReason: approved ? "" : String(reason || "Документы отклонены. Попробуйте пройти верификацию еще раз.").trim(),
+    rejectionReason: approved
+      ? ""
+      : String(reason || (dismissed ? "Доступ водителя отключен администрацией." : "Документы отклонены. Попробуйте пройти верификацию еще раз.")).trim(),
   };
   const pool = await ensurePostgres();
 
@@ -2037,6 +2040,7 @@ function sendAdminPage(res) {
                       <div class="admin-actions">
                         <button type="button" data-driver-review="approved" data-driver-destination="\${esc(user.destination)}">Одобрить</button>
                         <button class="secondary" type="button" data-driver-review="rejected" data-driver-destination="\${esc(user.destination)}">Отклонить</button>
+                        \${verification.status === "approved" ? \`<button class="secondary" type="button" data-driver-review="dismissed" data-driver-destination="\${esc(user.destination)}">Уволить</button>\` : ""}
                       </div>
                     </td>
                   </tr>
@@ -2048,8 +2052,12 @@ function sendAdminPage(res) {
       }
 
       async function reviewDriver(destination, decision) {
-        const reason = decision === "rejected" ? prompt("Причина отклонения", "Документы отклонены. Попробуйте еще раз.") || "" : "";
-        statusText.textContent = decision === "approved" ? "Одобряю водителя..." : "Отклоняю заявку...";
+        const reason = decision === "rejected"
+          ? prompt("Причина отклонения", "Документы отклонены. Попробуйте еще раз.") || ""
+          : decision === "dismissed"
+            ? prompt("Причина увольнения", "Доступ водителя отключен администрацией.") || ""
+            : "";
+        statusText.textContent = decision === "approved" ? "Одобряю водителя..." : decision === "dismissed" ? "Отключаю водителя..." : "Отклоняю заявку...";
 
         try {
           const response = await fetch("/api/admin/driver-verifications/review", {
@@ -2151,7 +2159,7 @@ async function handleAdminReviewDriver(req, res) {
     }
 
     const destination = normalizeDestination(body.destination);
-    const decision = body.decision === "approved" ? "approved" : "rejected";
+    const decision = body.decision === "approved" ? "approved" : body.decision === "dismissed" ? "dismissed" : "rejected";
     if (!destination) {
       throw new Error("Не указан водитель.");
     }

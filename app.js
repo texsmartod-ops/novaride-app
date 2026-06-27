@@ -1516,6 +1516,7 @@ function renderDriverVerificationGate(verification = getDriverVerification()) {
   const status = verification.status || "none";
   const isPending = status === "pending";
   const isRejected = status === "rejected";
+  const isDismissed = status === "dismissed";
   const vehicle = verification.vehicle || {};
 
   if (isPending) {
@@ -1535,9 +1536,13 @@ function renderDriverVerificationGate(verification = getDriverVerification()) {
 
   return `
     <form class="driver-verification-card" id="driverVerificationForm">
-      <div class="verification-badge ${isRejected ? "rejected" : ""}">${isRejected ? "Отклонено" : "Верификация водителя"}</div>
-      <h2>${isRejected ? "Документы отклонены" : "Пройдите проверку"}</h2>
-      <p>${isRejected ? escapeHtml(verification.rejectionReason || "Попробуйте пройти верификацию еще раз.") : "Заполните 3 пункта, и заявка уйдет администратору на проверку."}</p>
+      <div class="verification-badge ${isRejected || isDismissed ? "rejected" : ""}">${isDismissed ? "Доступ отключен" : isRejected ? "Отклонено" : "Верификация водителя"}</div>
+      <h2>${isDismissed ? "Вы отключены от ленты" : isRejected ? "Документы отклонены" : "Пройдите проверку"}</h2>
+      <p>${
+        isDismissed || isRejected
+          ? escapeHtml(verification.rejectionReason || "Попробуйте пройти верификацию еще раз.")
+          : "Заполните 3 пункта, и заявка уйдет администратору на проверку."
+      }</p>
 
       <div class="verification-step">
         <strong>1. Транспорт</strong>
