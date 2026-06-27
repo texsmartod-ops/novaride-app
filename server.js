@@ -186,6 +186,11 @@ async function ensurePostgres() {
         driver_lng NUMERIC,
         driver_lat NUMERIC,
         accepted_at TIMESTAMPTZ,
+        completed_at TIMESTAMPTZ,
+        passenger_trip_rating INTEGER,
+        driver_trip_rating INTEGER,
+        passenger_rated_at TIMESTAMPTZ,
+        driver_rated_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
@@ -210,6 +215,11 @@ async function ensurePostgres() {
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_lng NUMERIC;
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_lat NUMERIC;
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ;
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS passenger_trip_rating INTEGER;
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_trip_rating INTEGER;
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS passenger_rated_at TIMESTAMPTZ;
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_rated_at TIMESTAMPTZ;
     `);
   }
 
@@ -389,6 +399,11 @@ function orderFromRow(row) {
         }
       : null,
     acceptedAt: row.accepted_at instanceof Date ? row.accepted_at.toISOString() : row.accepted_at,
+    completedAt: row.completed_at instanceof Date ? row.completed_at.toISOString() : row.completed_at,
+    passengerTripRating: row.passenger_trip_rating ? Number(row.passenger_trip_rating) : null,
+    driverTripRating: row.driver_trip_rating ? Number(row.driver_trip_rating) : null,
+    passengerRatedAt: row.passenger_rated_at instanceof Date ? row.passenger_rated_at.toISOString() : row.passenger_rated_at,
+    driverRatedAt: row.driver_rated_at instanceof Date ? row.driver_rated_at.toISOString() : row.driver_rated_at,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
   };
 }
@@ -417,6 +432,11 @@ function publicOrder(order) {
     secondsLeft: order.expiresAt ? Math.max(0, Math.ceil((new Date(order.expiresAt).getTime() - Date.now()) / 1000)) : 0,
     driver: order.driver || null,
     acceptedAt: order.acceptedAt,
+    completedAt: order.completedAt,
+    passengerTripRating: order.passengerTripRating || null,
+    driverTripRating: order.driverTripRating || null,
+    passengerRatedAt: order.passengerRatedAt || null,
+    driverRatedAt: order.driverRatedAt || null,
     createdAt: order.createdAt,
   };
 }
@@ -668,7 +688,7 @@ async function createRideOrder(destination, payload) {
           coordinates: Array.isArray(stop?.coordinates) ? stop.coordinates.map(Number) : [],
         }))
         .filter((stop) => stop.label && stop.coordinates.length === 2 && !stop.coordinates.some(Number.isNaN))
-        .slice(0, 4)
+        .slice(0, 5)
     : [];
   const from = String(payload.from || "").trim();
   const to = String(payload.to || "").trim();
@@ -783,6 +803,35 @@ async function listAdminRideOrders() {
     .slice()
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
     .slice(0, 200);
+}
+
+async function listRideHistory(destination, role = "passenger") {
+  const user = await findUserByDestination(destination);
+  const phone = destination && destination.startsWith("+") ? destination : "";
+  const pool = await ensurePostgres();
+
+  if (pool) {
+    const result =
+      role === "driver"
+        ? await pool.query(
+            "SELECT * FROM ride_orders WHERE status = 'completed' AND driver_phone = $1 ORDER BY completed_at DESC NULLS LAST, created_at DESC LIMIT 100",
+            [phone],
+          )
+        : await pool.query(
+            "SELECT * FROM ride_orders WHERE status = 'completed' AND (user_id = $1 OR passenger_phone = $2) ORDER BY completed_at DESC NULLS LAST, created_at DESC LIMIT 100",
+            [user?.id || "", phone],
+          );
+    return result.rows.map(orderFromRow);
+  }
+
+  return readOrders()
+    .filter((order) => {
+      if (order.status !== "completed") return false;
+      if (role === "driver") return order.driver?.phone && order.driver.phone === phone;
+      return order.userId === user?.id || (phone && order.passengerPhone === phone);
+    })
+    .sort((a, b) => new Date(b.completedAt || b.createdAt || 0) - new Date(a.completedAt || a.createdAt || 0))
+    .slice(0, 100);
 }
 
 async function findRideOrderById(orderId) {
@@ -1050,6 +1099,123 @@ async function cancelRideOrder(orderId, payload = {}) {
     messages,
   };
   writeOrders(orders);
+  return orders[index];
+}
+
+function normalizeTripRating(value) {
+  const rating = Math.round(Number(value || 0));
+  return Math.min(5, Math.max(1, rating || 5));
+}
+
+async function completeRideOrder(orderId, payload = {}) {
+  const order = await findRideOrderById(orderId);
+  if (!order) {
+    throw new Error("Заказ не найден.");
+  }
+
+  if (order.status !== "accepted") {
+    throw new Error("Завершить можно только подтвержденную поездку.");
+  }
+
+  const now = new Date().toISOString();
+  const message = {
+    id: createId(),
+    sender: "system",
+    name: "NovaRide",
+    text: "Поездка завершена. Оцените друг друга.",
+    createdAt: now,
+  };
+  const messages = [...(order.messages || []), message].slice(-80);
+
+  const pool = await ensurePostgres();
+  if (pool) {
+    const result = await pool.query(
+      "UPDATE ride_orders SET status = 'completed', completed_at = $2, messages = $3::jsonb WHERE id = $1 AND status = 'accepted' RETURNING *",
+      [order.id, now, JSON.stringify(messages)],
+    );
+    await pool.query(
+      "INSERT INTO ride_messages (id, order_id, sender, sender_name, message_text, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
+      [message.id, order.id, message.sender, message.name, message.text, message.createdAt],
+    );
+    return orderFromRow(result.rows[0]);
+  }
+
+  const orders = readOrders();
+  const index = orders.findIndex((item) => item.id === order.id);
+  if (index < 0 || orders[index].status !== "accepted") {
+    throw new Error("Завершить можно только подтвержденную поездку.");
+  }
+  orders[index] = {
+    ...orders[index],
+    status: "completed",
+    completedAt: now,
+    messages,
+  };
+  writeOrders(orders);
+  return orders[index];
+}
+
+async function rateRideOrder(orderId, payload = {}) {
+  const order = await findRideOrderById(orderId);
+  if (!order) {
+    throw new Error("Заказ не найден.");
+  }
+
+  if (order.status !== "completed") {
+    throw new Error("Оценку можно поставить после завершения поездки.");
+  }
+
+  const role = payload.role === "driver" ? "driver" : "passenger";
+  const rating = normalizeTripRating(payload.rating);
+  const now = new Date().toISOString();
+  const ratingField = role === "driver" ? "driver_trip_rating" : "passenger_trip_rating";
+  const ratedField = role === "driver" ? "driver_rated_at" : "passenger_rated_at";
+
+  const pool = await ensurePostgres();
+  if (pool) {
+    const result = await pool.query(
+      `UPDATE ride_orders SET ${ratingField} = $2, ${ratedField} = $3 WHERE id = $1 AND status = 'completed' RETURNING *`,
+      [order.id, rating, now],
+    );
+    const updated = orderFromRow(result.rows[0]);
+
+    if (role === "driver" && order.userId) {
+      await pool.query("UPDATE users SET rating = $2, updated_at = NOW() WHERE id = $1", [order.userId, rating]);
+      updated.passengerRating = rating;
+    }
+
+    if (role === "passenger" && updated.driver) {
+      updated.driver.rating = rating;
+    }
+
+    return updated;
+  }
+
+  const orders = readOrders();
+  const index = orders.findIndex((item) => item.id === order.id);
+  if (index < 0 || orders[index].status !== "completed") {
+    throw new Error("Оценку можно поставить после завершения поездки.");
+  }
+
+  orders[index] = {
+    ...orders[index],
+    [role === "driver" ? "driverTripRating" : "passengerTripRating"]: rating,
+    [role === "driver" ? "driverRatedAt" : "passengerRatedAt"]: now,
+    passengerRating: role === "driver" ? rating : orders[index].passengerRating,
+    driver: role === "passenger" && orders[index].driver ? { ...orders[index].driver, rating } : orders[index].driver,
+  };
+  writeOrders(orders);
+
+  if (role === "driver" && orders[index].userId) {
+    const users = readUsers();
+    const userIndex = users.findIndex((user) => user.id === orders[index].userId);
+    if (userIndex >= 0) {
+      users[userIndex].rating = rating;
+      users[userIndex].updatedAt = now;
+      writeUsers(users);
+    }
+  }
+
   return orders[index];
 }
 
@@ -1861,6 +2027,44 @@ async function handleCancelRideOrder(req, res, orderId) {
   }
 }
 
+async function handleCompleteRideOrder(req, res, orderId) {
+  try {
+    const body = await readJson(req);
+    const order = await completeRideOrder(orderId, body);
+    sendJson(res, 200, { ok: true, order: publicOrder(order) });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось завершить поездку." });
+  }
+}
+
+async function handleRateRideOrder(req, res, orderId) {
+  try {
+    const body = await readJson(req);
+    const order = await rateRideOrder(orderId, body);
+    sendJson(res, 200, { ok: true, order: publicOrder(order) });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось сохранить оценку." });
+  }
+}
+
+async function handleRideHistory(req, res) {
+  try {
+    const url = new URL(req.url, "http://localhost");
+    const role = url.searchParams.get("role") === "driver" ? "driver" : "passenger";
+    const destination = normalizeDestination(url.searchParams.get("destination") || "");
+
+    if (!destination) {
+      sendJson(res, 401, { ok: false, error: "Профиль не найден. Войдите снова." });
+      return;
+    }
+
+    const orders = await listRideHistory(destination, role);
+    sendJson(res, 200, { ok: true, orders: orders.map(publicOrder) });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось загрузить историю." });
+  }
+}
+
 async function handleDeleteAccount(req, res) {
   try {
     const body = await readJson(req);
@@ -1993,6 +2197,23 @@ const server = http.createServer((req, res) => {
   const orderCancelMatch = req.url.match(/^\/api\/orders\/([^/]+)\/cancel$/);
   if (req.method === "POST" && orderCancelMatch) {
     handleCancelRideOrder(req, res, decodeURIComponent(orderCancelMatch[1]));
+    return;
+  }
+
+  const orderCompleteMatch = req.url.match(/^\/api\/orders\/([^/]+)\/complete$/);
+  if (req.method === "POST" && orderCompleteMatch) {
+    handleCompleteRideOrder(req, res, decodeURIComponent(orderCompleteMatch[1]));
+    return;
+  }
+
+  const orderRateMatch = req.url.match(/^\/api\/orders\/([^/]+)\/rate$/);
+  if (req.method === "POST" && orderRateMatch) {
+    handleRateRideOrder(req, res, decodeURIComponent(orderRateMatch[1]));
+    return;
+  }
+
+  if (req.method === "GET" && req.url.startsWith("/api/orders/history")) {
+    handleRideHistory(req, res);
     return;
   }
 

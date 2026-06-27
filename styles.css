@@ -2955,6 +2955,86 @@ input:focus {
   box-shadow: 0 14px 32px rgba(7, 23, 47, 0.12);
 }
 
+.ride-completed,
+.history-detail-sheet {
+  display: grid;
+  gap: 14px;
+  border: 1px solid rgba(29, 103, 255, 0.16);
+  border-radius: 8px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 42px rgba(7, 23, 47, 0.1);
+}
+
+.history-order-card {
+  cursor: pointer;
+}
+
+.history-order-card:focus-visible {
+  outline: 3px solid rgba(29, 103, 255, 0.28);
+  outline-offset: 3px;
+}
+
+.history-meta-grid {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid rgba(217, 226, 239, 0.8);
+  padding-top: 12px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.rating-box {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(29, 103, 255, 0.14);
+  border-radius: 8px;
+  padding: 14px;
+  background: linear-gradient(180deg, rgba(246, 249, 255, 0.96), rgba(255, 255, 255, 0.86));
+}
+
+.rating-box > span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.rating-box.is-rated {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.star-picker {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(42px, 1fr));
+  gap: 8px;
+}
+
+.star-picker button {
+  min-width: 0;
+  min-height: 46px;
+  border: 1px solid rgba(29, 103, 255, 0.16);
+  border-radius: 8px;
+  background: #fff;
+  color: #f7b500;
+  font-size: 1.5rem;
+  font-weight: 1000;
+  cursor: pointer;
+}
+
+.star-picker button:hover,
+.star-picker button:focus-visible {
+  border-color: rgba(247, 181, 0, 0.46);
+  background: rgba(255, 248, 225, 0.95);
+  outline: none;
+}
+
+.static-stars {
+  color: #f7b500;
+  font-weight: 1000;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
 .client-profile-row {
   display: grid;
   grid-template-columns: 54px minmax(0, 1fr);

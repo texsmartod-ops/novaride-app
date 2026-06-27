@@ -91,9 +91,8 @@ const sections = {
     title: "История заказов",
     html: `
       <div class="section-hero"><span>Ваши маршруты</span><h2>История заказов</h2><p>Все поездки, водители и контакты в одном спокойном экране.</p></div>
-      <div class="feature-grid">
-        <article class="list-card accent-card"><strong>Дерибасовская 1 -> Аркадия</strong><span>24 июня, 09:40 | Андрей | +380 67 442 11 09</span><em>Оценка 5.0</em></article>
-        <article class="list-card"><strong>Вокзал -> Французский бульвар</strong><span>21 июня, 18:15 | Марина | +380 93 120 44 80</span><em>Комфорт</em></article>
+      <div class="feature-grid" id="rideHistoryList">
+        <article class="list-card"><strong>Загружаем историю...</strong><span>Здесь появятся завершенные реальные поездки.</span><em>NovaRide</em></article>
       </div>
     `,
   },
@@ -191,9 +190,8 @@ const driverSections = {
     title: "Заказы",
     html: `
       <div class="section-hero driver-hero"><span>Мои рейсы</span><h2>Заказы</h2><p>Поездки, которые вы уже выполнили как водитель.</p></div>
-      <div class="driver-feed">
-        <article class="driver-order-card"><i></i><strong>Аркадия -> Центр</strong><span>24 июня · 250 грн · клиент 4.9</span><em>завершен</em></article>
-        <article class="driver-order-card"><i></i><strong>Вокзал -> Таирова</strong><span>23 июня · 310 грн · клиент 5.0</span><em>завершен</em></article>
+      <div class="driver-feed" id="driverHistoryList">
+        <article class="driver-empty-card">Загружаем завершенные поездки...</article>
       </div>
     `,
   },
@@ -1364,6 +1362,9 @@ function showSection(section) {
   const source = state.driverMode && driverSections[section] ? driverSections : sections;
   $("#screenTitle").textContent = source[section].title;
   $("#infoPanel").innerHTML = renderSection(section, source);
+  if (section === "history") {
+    loadRideHistory(state.driverMode ? "driver" : "passenger");
+  }
 }
 
 function renderSection(section, source = sections) {
@@ -1597,6 +1598,169 @@ function renderOrderStops(order) {
   return `<div class="order-stops">${stops.map((stop, index) => `<span>${index + 1}. ${escapeHtml(stop.label)}</span>`).join("")}</div>`;
 }
 
+function formatRideDate(value) {
+  if (!value) return "Дата не указана";
+  return new Intl.DateTimeFormat("ru", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function renderStaticStars(rating = 5) {
+  const value = Math.max(1, Math.min(5, Math.round(Number(rating || 5))));
+  return `<span class="static-stars">${"★".repeat(value)}${"☆".repeat(5 - value)}</span>`;
+}
+
+function renderRatingBox(order, role) {
+  const isDriver = role === "driver";
+  const ownRating = isDriver ? order.driverTripRating : order.passengerTripRating;
+  const title = isDriver ? "Оцените клиента" : "Оцените водителя";
+  const subtitle = isDriver ? "Эта оценка сохранится в истории клиента." : "Эта оценка сохранится в истории водителя.";
+
+  if (ownRating) {
+    return `
+      <div class="rating-box is-rated">
+        <strong>${isDriver ? "Вы оценили клиента" : "Вы оценили водителя"}</strong>
+        ${renderStaticStars(ownRating)}
+      </div>
+    `;
+  }
+
+  return `
+    <div class="rating-box" data-rating-box="${escapeHtml(order.id)}" data-rating-role="${role}">
+      <strong>${title}</strong>
+      <span>${subtitle}</span>
+      <div class="star-picker" role="radiogroup" aria-label="${title}">
+        ${[1, 2, 3, 4, 5]
+          .map((value) => `<button type="button" data-rate-order="${escapeHtml(order.id)}" data-rate-role="${role}" data-rate-value="${value}" aria-label="${value} звезд">★</button>`)
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderCompletedOrderPanel(order, role) {
+  const isDriver = role === "driver";
+  const person = isDriver ? order.passengerName || "Клиент" : order.driver?.name || "Водитель";
+  const phone = isDriver ? order.passengerPhone : order.driver?.phone;
+  const rating = isDriver ? order.passengerRating || 5 : order.driver?.rating || 4.86;
+  const avatar = (isDriver ? person : order.driver?.avatar || person).slice(0, 1).toUpperCase();
+
+  return `
+    <div class="${isDriver ? "driver-detail-sheet" : "active-order-panel"} ride-completed">
+      <div class="accepted-badge completed">Поездка завершена</div>
+      <div class="client-profile-row driver-profile-row">
+        <div class="client-avatar">${escapeHtml(avatar)}</div>
+        <div>
+          <strong>${escapeHtml(person)}</strong>
+          <span>Рейтинг ${escapeHtml(rating)}${phone ? ` · ${escapeHtml(phone)}` : ""}</span>
+        </div>
+      </div>
+      <div class="driver-route-preview">
+        <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
+        <span>${Number(order.distanceKm || 0).toFixed(1)} км · ${escapeHtml(order.price)} грн · ${formatRideDate(order.completedAt || order.createdAt)}</span>
+        ${renderOrderStops(order)}
+        ${order.comment ? `<em>${escapeHtml(order.comment)}</em>` : ""}
+      </div>
+      ${renderRatingBox(order, role)}
+      <button class="primary-action ${isDriver ? "back-to-feed" : "back-to-ride"}" type="button">${isDriver ? "Вернуться в ленту" : "Новая поездка"}</button>
+    </div>
+  `;
+}
+
+function renderHistoryCard(order, role) {
+  const isDriver = role === "driver";
+  const person = isDriver ? order.passengerName || "Клиент" : order.driver?.name || "Водитель";
+  const rating = isDriver ? order.driverTripRating || order.passengerRating || 5 : order.passengerTripRating || order.driver?.rating || 4.86;
+  const className = isDriver ? "driver-order-card history-order-card" : "list-card history-order-card";
+
+  return `
+    <article class="${className}" data-history-order="${escapeHtml(order.id)}" data-history-role="${role}" tabindex="0">
+      <i></i>
+      <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
+      <span>${formatRideDate(order.completedAt || order.createdAt)} · ${escapeHtml(person)} · ${Number(order.distanceKm || 0).toFixed(1)} км</span>
+      <em>${escapeHtml(order.price)} грн · ${renderStaticStars(rating)}</em>
+    </article>
+  `;
+}
+
+async function loadRideHistory(role = state.driverMode ? "driver" : "passenger") {
+  const destination = state.currentUser?.destination || state.authDestination;
+  const list = role === "driver" ? $("#driverHistoryList") : $("#rideHistoryList");
+  if (!list || !destination) return;
+
+  list.innerHTML = role === "driver"
+    ? `<article class="driver-empty-card">Загружаем завершенные поездки...</article>`
+    : `<article class="list-card"><strong>Загружаем историю...</strong><span>Секунду, ищем завершенные поездки.</span><em>NovaRide</em></article>`;
+
+  try {
+    const response = await fetch(`/api/orders/history?role=${encodeURIComponent(role)}&destination=${encodeURIComponent(destination)}`);
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Не удалось загрузить историю.");
+    const orders = data.orders || [];
+    list.innerHTML = orders.length
+      ? orders.map((order) => renderHistoryCard(order, role)).join("")
+      : role === "driver"
+        ? `<article class="driver-empty-card">Завершенных поездок пока нет.</article>`
+        : `<article class="list-card"><strong>История пока пустая</strong><span>После завершения поездки она появится здесь.</span><em>0 поездок</em></article>`;
+  } catch (error) {
+    list.innerHTML = role === "driver"
+      ? `<article class="driver-empty-card">Не удалось загрузить историю.</article>`
+      : `<article class="list-card"><strong>История недоступна</strong><span>${escapeHtml(error.message)}</span><em>Ошибка</em></article>`;
+  }
+}
+
+async function openHistoryOrder(orderId, role) {
+  try {
+    const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Поездка не найдена.");
+    const order = data.order;
+    const isDriver = role === "driver";
+    const person = isDriver ? order.passengerName || "Клиент" : order.driver?.name || "Водитель";
+    const phone = isDriver ? order.passengerPhone : order.driver?.phone;
+    const rating = isDriver ? order.driverTripRating || order.passengerRating || 5 : order.passengerTripRating || order.driver?.rating || 4.86;
+    const avatar = (isDriver ? person : order.driver?.avatar || person).slice(0, 1).toUpperCase();
+
+    $(".content-grid").classList.remove("section-mode");
+    $(".map-panel").classList.remove("is-hidden");
+    $("#ridePanel").classList.add("is-hidden");
+    $("#driverPanel").classList.add("is-hidden");
+    $("#infoPanel").classList.remove("is-hidden");
+    $("#infoPanel").classList.add("active-panel");
+    $("#screenTitle").textContent = "История поездки";
+    $("#infoPanel").innerHTML = `
+      <div class="history-detail-sheet">
+        <button class="mini-action back-to-history" data-history-role="${role}" type="button">Назад к истории</button>
+        <div class="accepted-badge completed">Завершенная поездка</div>
+        <div class="client-profile-row driver-profile-row">
+          <div class="client-avatar">${escapeHtml(avatar)}</div>
+          <div>
+            <strong>${escapeHtml(person)}</strong>
+            <span>${renderStaticStars(rating)}${phone ? ` · ${escapeHtml(phone)}` : ""}</span>
+          </div>
+        </div>
+        <div class="driver-route-preview">
+          <strong>${escapeHtml(order.from)} -> ${escapeHtml(order.to)}</strong>
+          <span>${Number(order.distanceKm || 0).toFixed(1)} км · ${escapeHtml(order.price)} грн · ${formatRideDate(order.completedAt || order.createdAt)}</span>
+          ${renderOrderStops(order)}
+          ${order.comment ? `<em>${escapeHtml(order.comment)}</em>` : `<em>Без комментария</em>`}
+        </div>
+        <div class="history-meta-grid">
+          <span>Класс: <strong>${escapeHtml(order.carClass)}</strong></span>
+          <span>Оценка клиента: <strong>${escapeHtml(order.driverTripRating || order.passengerRating || 5)}</strong></span>
+          <span>Оценка водителя: <strong>${escapeHtml(order.passengerTripRating || order.driver?.rating || 4.86)}</strong></span>
+        </div>
+      </div>
+    `;
+    applyOrderToMap(order);
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
 function renderRideChat(order, sender) {
   const messages = order?.messages || [];
   return `
@@ -1782,7 +1946,7 @@ function showDriverAcceptedOrder(order, options = {}) {
     localStorage.removeItem(DRIVER_DETAIL_ORDER_KEY);
     localStorage.setItem(DRIVER_TAB_KEY, "feed");
   }
-  if (shouldPoll && order?.id && ["open", "accepted"].includes(order.status) && !driverAcceptedTimer) {
+  if (shouldPoll && order?.id && ["open", "accepted", "completed"].includes(order.status) && !driverAcceptedTimer) {
     driverAcceptedTimer = window.setInterval(() => pollDriverAcceptedOrder(order.id), 1500);
   }
 
@@ -1793,7 +1957,13 @@ function showDriverAcceptedOrder(order, options = {}) {
   $("#ridePanel").classList.add("is-hidden");
   $("#infoPanel").classList.add("is-hidden");
   $("#driverPanel").classList.remove("is-hidden");
-  $("#screenTitle").textContent = order.status === "accepted" ? "Заказ подтвержден" : "Предложение отправлено";
+  $("#screenTitle").textContent = order.status === "completed" ? "Поездка завершена" : order.status === "accepted" ? "Заказ подтвержден" : "Предложение отправлено";
+  if (order.status === "completed") {
+    $("#driverContent").innerHTML = renderCompletedOrderPanel(order, "driver");
+    if (shouldSyncMap) applyOrderToMap(order);
+    return;
+  }
+
   $("#driverContent").innerHTML = `
     <div class="driver-detail-sheet accepted ${order.status === "accepted" ? "confirmed" : ""}">
       <div class="accepted-badge">${order.status === "accepted" ? "Клиент выбрал вас" : "Предложение у клиента"}</div>
@@ -1823,6 +1993,7 @@ function showDriverAcceptedOrder(order, options = {}) {
         ${renderOrderStops(order)}
       </div>
       ${order.status === "accepted" ? renderRideChat(order, "driver") : ""}
+      ${order.status === "accepted" ? `<button class="primary-action complete-order" data-order="${escapeHtml(order.id)}" type="button">Завершить поездку</button>` : ""}
       <button class="ghost-action cancel-order" data-order="${escapeHtml(order.id)}" data-sender="driver" type="button">Отменить заказ</button>
     </div>
   `;
@@ -1846,7 +2017,11 @@ async function pollDriverAcceptedOrder(orderId) {
     if (data.order.status === "accepted" && isRideChatFocused(orderId)) {
       return;
     }
-    if (!["open", "accepted"].includes(data.order.status)) {
+    if (data.order.status === "completed") {
+      clearInterval(driverAcceptedTimer);
+      driverAcceptedTimer = null;
+    }
+    if (!["open", "accepted", "completed"].includes(data.order.status)) {
       clearInterval(driverAcceptedTimer);
       driverAcceptedTimer = null;
     }
@@ -1885,7 +2060,7 @@ function renderPassengerActiveOrder(order) {
   }
   const progress = Math.max(0, Math.min(100, ((Number(order.secondsLeft || 0) / ORDER_SEARCH_SECONDS) * 100).toFixed(2)));
   panel.style.setProperty("--order-progress", `${progress}%`);
-  panel.className = `active-order-panel ${order.status === "accepted" ? "ride-confirmed" : ["expired", "canceled"].includes(order.status) ? "ride-expired" : "offer-toast"}`;
+  panel.className = `active-order-panel ${order.status === "completed" ? "ride-completed" : order.status === "accepted" ? "ride-confirmed" : ["expired", "canceled"].includes(order.status) ? "ride-expired" : "offer-toast"}`;
   $(".workspace")?.classList.toggle("passenger-active-ride", order.status === "accepted");
   const isOfferOverlay = order.status === "open";
   const panelHost = isOfferOverlay ? $("#taxiScreen") : $("#ridePanel");
@@ -1905,6 +2080,15 @@ function renderPassengerActiveOrder(order) {
       <strong>${order.status === "canceled" ? "Поездка отменена" : "Заказ отменен автоматически"}</strong>
       <span>${order.status === "canceled" ? "Можно создать новый заказ, когда будете готовы." : "40 секунд прошли. Создайте новый заказ, чтобы снова отправить его водителям."}</span>
     `;
+    return;
+  }
+
+  if (order.status === "completed") {
+    clearInterval(activeOrderTimer);
+    activeOrderTimer = null;
+    $(".workspace")?.classList.remove("passenger-active-ride");
+    panel.innerHTML = renderCompletedOrderPanel(order, "passenger");
+    applyOrderToMap(order);
     return;
   }
 
@@ -2079,6 +2263,51 @@ async function cancelRideOrder(orderId, sender) {
   }
 }
 
+async function completeRideOrder(orderId) {
+  const button = document.querySelector(`.complete-order[data-order="${CSS.escape(orderId)}"]`);
+  if (button) setButtonLoading(button, true, "Завершаем...");
+
+  try {
+    const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ completedBy: "driver" }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Не удалось завершить поездку.");
+    showDriverAcceptedOrder(data.order, { syncMap: false, poll: true });
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    if (button) setButtonLoading(button, false);
+  }
+}
+
+async function rateRideOrder(orderId, role, rating) {
+  const button = document.querySelector(`[data-rate-order="${CSS.escape(orderId)}"][data-rate-role="${CSS.escape(role)}"][data-rate-value="${CSS.escape(String(rating))}"]`);
+  if (button) setButtonLoading(button, true, "★");
+
+  try {
+    const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}/rate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role, rating }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Не удалось сохранить оценку.");
+
+    if (role === "driver") {
+      showDriverAcceptedOrder(data.order, { syncMap: false, poll: false });
+    } else {
+      renderPassengerActiveOrder(data.order);
+    }
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    if (button) setButtonLoading(button, false);
+  }
+}
+
 async function pollActiveOrder(orderId) {
   try {
     const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
@@ -2111,7 +2340,7 @@ async function restoreDriverView() {
     try {
       const response = await fetch(`/api/orders/${encodeURIComponent(driverOrderId)}`);
       const data = await response.json();
-      if (response.ok && data.ok && ["open", "accepted"].includes(data.order.status)) {
+      if (response.ok && data.ok && ["open", "accepted", "completed"].includes(data.order.status)) {
         state.driverMode = true;
         updateMenuForRole();
         showDriverAcceptedOrder(data.order);
@@ -2435,6 +2664,19 @@ function bindEvents() {
     const cancelButton = event.target.closest(".cancel-order");
     if (cancelButton) {
       cancelRideOrder(cancelButton.dataset.order, cancelButton.dataset.sender);
+      return;
+    }
+
+    const rateButton = event.target.closest("[data-rate-order]");
+    if (rateButton) {
+      rateRideOrder(rateButton.dataset.rateOrder, rateButton.dataset.rateRole, rateButton.dataset.rateValue);
+      return;
+    }
+
+    if (event.target.closest(".back-to-ride")) {
+      clearActiveOrder();
+      $("#activeOrderPanel")?.remove();
+      showSection("ride");
     }
   });
   $("#ridePanel").addEventListener("keydown", (event) => {
@@ -2513,6 +2755,18 @@ function bindEvents() {
       return;
     }
 
+    const completeButton = event.target.closest(".complete-order");
+    if (completeButton) {
+      completeRideOrder(completeButton.dataset.order);
+      return;
+    }
+
+    const rateButton = event.target.closest("[data-rate-order]");
+    if (rateButton) {
+      rateRideOrder(rateButton.dataset.rateOrder, rateButton.dataset.rateRole, rateButton.dataset.rateValue);
+      return;
+    }
+
     if (event.target.closest(".back-to-feed")) {
       showDriverContent("feed");
     }
@@ -2537,6 +2791,18 @@ function bindEvents() {
     }, true);
   });
   $("#infoPanel").addEventListener("click", (event) => {
+    const historyOrder = event.target.closest("[data-history-order]");
+    if (historyOrder) {
+      openHistoryOrder(historyOrder.dataset.historyOrder, historyOrder.dataset.historyRole);
+      return;
+    }
+
+    const backToHistory = event.target.closest(".back-to-history");
+    if (backToHistory) {
+      showSection("history");
+      return;
+    }
+
     const actionTarget = event.target.closest("[data-action]");
     if (actionTarget) {
       showSectionAction(actionTarget.dataset.action);
@@ -2576,6 +2842,13 @@ function bindEvents() {
       const card = addressTarget.closest("[data-address]");
       $("#toInput").value = card.dataset.address;
       showSection("ride");
+    }
+  });
+  $("#infoPanel").addEventListener("keydown", (event) => {
+    const historyOrder = event.target.closest("[data-history-order]");
+    if (historyOrder && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      openHistoryOrder(historyOrder.dataset.historyOrder, historyOrder.dataset.historyRole);
     }
   });
   $("#themeQuickBtn").addEventListener("click", () => applyTheme(document.body.classList.contains("dark") ? "light" : "dark"));
