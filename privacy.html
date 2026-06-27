@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07172f" />
+    <title>Политика конфиденциальности NovaRide</title>
+    <link rel="icon" href="/assets/novaride-icon.svg" type="image/svg+xml" />
+    <style>
+      :root {
+        color-scheme: light;
+        --midnight: #07172f;
+        --blue: #1d67ff;
+        --cyan: #35d4ff;
+        --ink: #172033;
+        --muted: #647089;
+        --line: #dbe5f2;
+        --surface: #ffffff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #f5f8fd;
+        color: var(--ink);
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        line-height: 1.6;
+      }
+
+      main {
+        width: min(920px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 34px 0 54px;
+      }
+
+      .policy-card {
+        border: 1px solid rgba(29, 103, 255, 0.12);
+        border-radius: 18px;
+        background: var(--surface);
+        box-shadow: 0 22px 60px rgba(7, 23, 47, 0.08);
+        overflow: hidden;
+      }
+
+      header {
+        padding: 34px;
+        background: linear-gradient(135deg, var(--midnight), #0d3e96);
+        color: #fff;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 24px;
+        font-weight: 900;
+      }
+
+      .brand img {
+        width: 44px;
+        height: 44px;
+      }
+
+      h1 {
+        margin: 0 0 10px;
+        font-size: clamp(2rem, 6vw, 3.2rem);
+        line-height: 1.05;
+      }
+
+      header p {
+        max-width: 680px;
+        margin: 0;
+        color: rgba(255, 255, 255, 0.78);
+        font-size: 1.05rem;
+      }
+
+      section {
+        padding: 26px 34px;
+        border-top: 1px solid var(--line);
+      }
+
+      h2 {
+        margin: 0 0 12px;
+        color: var(--midnight);
+        font-size: 1.35rem;
+      }
+
+      p,
+      li {
+        color: var(--muted);
+      }
+
+      ul {
+        margin: 10px 0 0;
+        padding-left: 22px;
+      }
+
+      a {
+        color: var(--blue);
+        font-weight: 800;
+      }
+
+      .updated {
+        display: inline-flex;
+        margin-top: 18px;
+        border-radius: 999px;
+        padding: 8px 12px;
+        background: rgba(53, 212, 255, 0.14);
+        color: #dff8ff;
+        font-weight: 800;
+      }
+
+      @media (max-width: 620px) {
+        main {
+          width: 100%;
+          padding: 0;
+        }
+
+        .policy-card {
+          min-height: 100vh;
+          border: 0;
+          border-radius: 0;
+        }
+
+        header,
+        section {
+          padding: 24px 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article class="policy-card">
+        <header>
+          <div class="brand">
+            <img src="/assets/novaride-icon.svg" alt="" />
+            <span>NovaRide</span>
+          </div>
+          <h1>Политика конфиденциальности</h1>
+          <p>
+            Эта политика объясняет, какие данные использует NovaRide для работы сервиса такси, регистрации,
+            заказов, связи клиента с водителем и безопасности поездок.
+          </p>
+          <span class="updated">Обновлено: 27 июня 2026</span>
+        </header>
+
+        <section>
+          <h2>Какие данные мы собираем</h2>
+          <p>Для работы приложения NovaRide может обрабатывать:</p>
+          <ul>
+            <li>номер телефона или email для входа и подтверждения аккаунта;</li>
+            <li>имя, дату рождения, пол и необязательное фото профиля;</li>
+            <li>адреса точек A, B и остановок, историю заказов и комментарии к поездке;</li>
+            <li>геолокацию, если пользователь разрешает определить текущее местоположение;</li>
+            <li>сообщения в чате между клиентом и водителем;</li>
+            <li>рейтинг, предложения водителей и статус поездки.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Зачем нужны данные</h2>
+          <p>Мы используем данные, чтобы:</p>
+          <ul>
+            <li>создавать и защищать аккаунты пользователей;</li>
+            <li>строить маршрут на карте и показывать точку подачи автомобиля;</li>
+            <li>передавать заказ водителям и показывать предложения клиенту;</li>
+            <li>обеспечивать связь клиента и водителя во время поездки;</li>
+            <li>сохранять историю заказов и помогать разбирать спорные ситуации;</li>
+            <li>улучшать работу сервиса и безопасность поездок.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Геолокация</h2>
+          <p>
+            NovaRide запрашивает доступ к геолокации только для удобного выбора точки посадки и отображения
+            маршрута. Пользователь может не давать доступ и указать адрес вручную.
+          </p>
+        </section>
+
+        <section>
+          <h2>Передача данных</h2>
+          <p>
+            Мы не продаем персональные данные. Для работы сервиса данные могут обрабатываться техническими
+            провайдерами, например хостингом, картографическим сервисом, email- или SMS-провайдером.
+            Клиент и водитель видят только данные, необходимые для выполнения конкретной поездки.
+          </p>
+        </section>
+
+        <section>
+          <h2>Хранение и удаление аккаунта</h2>
+          <p>
+            Данные аккаунта и заказов хранятся столько, сколько нужно для работы сервиса, поддержки и
+            безопасности. Пользователь может удалить аккаунт в настройках NovaRide. После удаления профиль
+            удаляется из базы приложения.
+          </p>
+        </section>
+
+        <section>
+          <h2>Безопасность</h2>
+          <p>
+            Мы используем подтверждение кодом, защищенное соединение HTTPS и ограничиваем доступ к данным.
+            При этом ни один интернет-сервис не может гарантировать абсолютную защиту, поэтому мы продолжаем
+            улучшать безопасность по мере развития приложения.
+          </p>
+        </section>
+
+        <section>
+          <h2>Контакты</h2>
+          <p>
+            По вопросам конфиденциальности и удаления данных можно связаться с поддержкой NovaRide:
+            <a href="mailto:support@novaride.xyz">support@novaride.xyz</a>.
+          </p>
+        </section>
+      </article>
+    </main>
+  </body>
+</html>
