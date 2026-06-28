@@ -57,6 +57,7 @@ let accountCheckTimer;
 let driverOrdersTimer;
 let activeOrderTimer;
 let driverAcceptedTimer;
+let driverVerificationTimer;
 let driverCarMarker;
 let lastRouteKey = "";
 let rideChatActiveUntil = 0;
@@ -286,6 +287,33 @@ function savePersistentAuth(user = state.currentUser) {
 
 function clearPersistentAuth() {
   localStorage.removeItem(PERSISTENT_AUTH_KEY);
+}
+
+function clearDriverVerificationWatch() {
+  clearInterval(driverVerificationTimer);
+  driverVerificationTimer = null;
+}
+
+function startDriverVerificationWatch() {
+  if (driverVerificationTimer) return;
+
+  driverVerificationTimer = window.setInterval(async () => {
+    if (!state.currentUser || !state.driverMode) return;
+
+    const wasApproved = isDriverApproved();
+    await refreshDriverVerificationStatus();
+    const isApprovedNow = isDriverApproved();
+
+    if (wasApproved && !isApprovedNow) {
+      localStorage.removeItem(DRIVER_ACTIVE_ORDER_KEY);
+      localStorage.removeItem(DRIVER_DETAIL_ORDER_KEY);
+      clearInterval(driverOrdersTimer);
+      clearInterval(driverAcceptedTimer);
+      showDriverVerificationGate();
+    } else if (!wasApproved && isApprovedNow) {
+      showDriverContent(localStorage.getItem(DRIVER_TAB_KEY) || "feed");
+    }
+  }, 6000);
 }
 
 function restorePersistentAuth() {
@@ -681,6 +709,7 @@ function enterApp(userOrName, options = {}) {
     savePersistentAuth(user);
   }
   updateMenuForRole();
+  startDriverVerificationWatch();
   window.setTimeout(() => {
     initMapboxMap();
     novaMap?.resize();
@@ -1429,6 +1458,7 @@ async function leaveAccount(kind) {
   }
 
   playScreenTransition(() => {
+    clearDriverVerificationWatch();
     clearPendingAuth();
     clearPersistentAuth();
     state.authSessionToken = "";
@@ -2696,6 +2726,22 @@ function restoreActiveOrder() {
 }
 
 async function restoreDriverView() {
+  await refreshDriverVerificationStatus();
+  const wantsDriverView = Boolean(
+    localStorage.getItem(DRIVER_ACTIVE_ORDER_KEY)
+      || localStorage.getItem(DRIVER_DETAIL_ORDER_KEY)
+      || localStorage.getItem(DRIVER_TAB_KEY),
+  );
+
+  if (wantsDriverView && !isDriverApproved()) {
+    state.driverMode = true;
+    updateMenuForRole();
+    localStorage.removeItem(DRIVER_ACTIVE_ORDER_KEY);
+    localStorage.removeItem(DRIVER_DETAIL_ORDER_KEY);
+    showDriverVerificationGate();
+    return true;
+  }
+
   const driverOrderId = localStorage.getItem(DRIVER_ACTIVE_ORDER_KEY);
   if (driverOrderId) {
     try {
