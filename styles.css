@@ -251,11 +251,9 @@ button {
   place-items: center;
   width: 74px;
   height: 74px;
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  border-radius: 8px;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.22), rgba(53, 212, 255, 0.08)),
-    rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
   box-shadow: 0 18px 38px rgba(0, 0, 0, 0.22), inset 0 0 22px rgba(53, 212, 255, 0.16);
   font-weight: 900;
   letter-spacing: 0;
@@ -273,25 +271,11 @@ button {
   animation: logoSheen 2500ms ease-in-out 1200ms infinite;
 }
 
-.brand-mark svg {
-  width: 54px;
-  height: 54px;
-}
-
-.logo-road {
-  fill: rgba(255, 255, 255, 0.94);
-}
-
-.logo-lane,
-.logo-spark {
-  fill: none;
-  stroke: var(--cyan);
-  stroke-linecap: round;
-  stroke-width: 5;
-}
-
-.logo-spark {
-  stroke-width: 4;
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .brand-name,
@@ -1353,6 +1337,21 @@ body.dark .verification-step-header {
   padding: 14px 24px;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.topbar-brand img {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  box-shadow: 0 8px 18px rgba(29, 103, 255, 0.18);
 }
 
 .topbar p {

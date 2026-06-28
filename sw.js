@@ -1,12 +1,14 @@
-const CACHE_NAME = "novaride-shell-v13";
+const CACHE_NAME = "novaride-shell-v14";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
-  "/styles.css?v=20260627-009",
-  "/app.js?v=20260627-009",
+  "/styles.css?v=20260628-002",
+  "/app.js?v=20260628-002",
   "/manifest.webmanifest",
-  "/assets/novaride-icon.svg",
-  "/assets/novaride-maskable.svg",
+  "/assets/novadrive-logo.png",
+  "/assets/novadrive-icon-192.png",
+  "/assets/novadrive-icon-512.png",
+  "/assets/apple-touch-icon.png",
 ];
 
 self.addEventListener("install", (event) => {

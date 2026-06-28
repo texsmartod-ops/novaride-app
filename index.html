@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>NovaRide</title>
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="icon" href="/assets/novaride-icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/assets/novaride-icon.svg" />
+    <link rel="icon" href="/assets/novadrive-icon-192.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
     <link href="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.css" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css?v=20260628-001" />
+    <link rel="stylesheet" href="/styles.css?v=20260628-002" />
   </head>
   <body>
     <main class="app-shell">
@@ -35,11 +35,7 @@
         <div class="brand-panel">
           <div class="brand-lockup">
             <div class="brand-mark" aria-hidden="true">
-              <svg viewBox="0 0 72 72" role="img">
-                <path class="logo-road" d="M36 9 55 61H42l-6-21-6 21H17L36 9Z" />
-                <path class="logo-lane" d="M36 22v9m0 8v9" />
-                <path class="logo-spark" d="M51 17h10M56 12v10" />
-              </svg>
+              <img src="/assets/novadrive-logo.png" alt="" />
             </div>
             <div>
               <span class="brand-name">NovaRide</span>
@@ -188,9 +184,12 @@
             <button class="icon-button" id="menuToggle" aria-label="Открыть меню">
               <span></span><span></span><span></span>
             </button>
-            <div>
-              <p>NovaRide</p>
-              <strong id="screenTitle">Поездка</strong>
+            <div class="topbar-brand">
+              <img src="/assets/novadrive-icon-192.png" alt="" />
+              <div>
+                <p>NovaRide</p>
+                <strong id="screenTitle">Поездка</strong>
+              </div>
             </div>
             <button class="icon-button round" id="themeQuickBtn" aria-label="Переключить тему">A</button>
           </header>
@@ -323,7 +322,7 @@
     </main>
 
     <script src="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.js"></script>
-    <script src="/app.js?v=20260628-001"></script>
+    <script src="/app.js?v=20260628-002"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
