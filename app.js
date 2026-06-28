@@ -15,6 +15,8 @@ const state = {
   currentSection: "ride",
   driverMode: false,
   rideOrders: [],
+  driverChatMessages: [],
+  driverChatKey: "",
   hiddenDriverOrders: [],
   declinedOffers: {},
   language: "ru",
@@ -58,6 +60,7 @@ let driverOrdersTimer;
 let activeOrderTimer;
 let driverAcceptedTimer;
 let driverVerificationTimer;
+let driverChatTimer;
 let driverCarMarker;
 let lastRouteKey = "";
 let rideChatActiveUntil = 0;
@@ -195,6 +198,10 @@ const driverSections = {
         <article class="list-card"><strong>Загружаем историю...</strong><span>Здесь появятся завершенные реальные поездки.</span><em>NovaRide</em></article>
       </div>
     `,
+  },
+  driverChat: {
+    title: "Чат водителей",
+    html: () => renderDriverCommunityChat(),
   },
 };
 
@@ -1477,6 +1484,8 @@ async function leaveAccount(kind) {
 
 function showSection(section) {
   clearInterval(driverOrdersTimer);
+  clearInterval(driverChatTimer);
+  driverChatTimer = null;
   $(".workspace").classList.remove("driver-order-view");
   $("#driverPanel").classList.remove("order-detail-mode");
   state.currentSection = section;
@@ -1506,6 +1515,9 @@ function showSection(section) {
   $("#infoPanel").innerHTML = renderSection(section, source);
   if (section === "history") {
     loadRideHistory(state.driverMode ? "driver" : "passenger");
+  }
+  if (state.driverMode && section === "driverChat") {
+    loadDriverCommunityChat({ startTimer: true });
   }
 }
 
@@ -1765,6 +1777,8 @@ async function submitDriverVerification(form) {
 
 function showPassengerMode() {
   state.driverMode = false;
+  clearInterval(driverChatTimer);
+  driverChatTimer = null;
   localStorage.removeItem(DRIVER_ACTIVE_ORDER_KEY);
   localStorage.removeItem(DRIVER_DETAIL_ORDER_KEY);
   localStorage.removeItem(DRIVER_TAB_KEY);
@@ -1992,6 +2006,133 @@ function formatRideDate(value) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function renderDriverCommunityChat() {
+  if (!isDriverApproved()) {
+    return `
+      <div class="section-hero driver-hero"><span>Доступ закрыт</span><h2>Водительский чат</h2><p>Здесь общаются только подтвержденные водители NovaRide.</p></div>
+      <article class="driver-chat-locked">
+        <strong>Пройдите верификацию водителя</strong>
+        <span>После одобрения документов администрацией откроется общий рабочий чат для водителей.</span>
+        <button class="primary-action refresh-driver-verification" type="button">Проверить статус</button>
+      </article>
+    `;
+  }
+
+  const messages = state.driverChatMessages || [];
+  return `
+    <div class="section-hero driver-hero compact"><span>Рабочая линия</span><h2>Чат водителей</h2><p>Обсуждайте смену, дороги, заказы и рабочие вопросы.</p></div>
+    <div class="driver-community-chat">
+      <div class="driver-community-log" id="driverCommunityLog">
+        ${
+          messages.length
+            ? messages
+                .map(
+                  (message) => `
+                    <article class="driver-community-message ${message.driverDestination === state.currentUser?.destination ? "own" : ""}">
+                      <div class="driver-community-avatar">${escapeHtml((message.driverName || "В").slice(0, 1).toUpperCase())}</div>
+                      <div>
+                        <strong>${escapeHtml(message.driverName || "Водитель NovaRide")} <span>${formatRideDate(message.createdAt)}</span></strong>
+                        <p>${escapeHtml(message.text)}</p>
+                      </div>
+                    </article>
+                  `,
+                )
+                .join("")
+            : `<article class="driver-community-empty">Пока сообщений нет. Напишите первым, как проходит смена.</article>`
+        }
+      </div>
+      <div class="driver-community-compose">
+        <input id="driverCommunityInput" placeholder="Напишите сообщение водителям" maxlength="500" />
+        <button class="primary-action" id="sendDriverCommunityMessage" type="button">Отправить</button>
+      </div>
+    </div>
+  `;
+}
+
+function scrollDriverCommunityChat() {
+  window.setTimeout(() => {
+    const log = $("#driverCommunityLog");
+    if (log) log.scrollTop = log.scrollHeight;
+  }, 40);
+}
+
+async function loadDriverCommunityChat(options = {}) {
+  if (!state.currentUser?.destination) return;
+
+  try {
+    const response = await fetch(`/api/driver-chat?destination=${encodeURIComponent(state.currentUser.destination)}`);
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "Чат водителей недоступен.");
+    }
+
+    const messages = data.messages || [];
+    const nextKey = messages.map((message) => message.id).join("|");
+    const shouldRender = nextKey !== state.driverChatKey || options.force;
+    const activeInput = $("#driverCommunityInput");
+    const draft = activeInput?.value || "";
+    const keepTyping = document.activeElement === activeInput && draft.trim();
+    state.driverChatMessages = messages;
+    state.driverChatKey = nextKey;
+    if (state.driverMode && state.currentSection === "driverChat") {
+      if (shouldRender && !keepTyping) {
+        $("#infoPanel").innerHTML = renderDriverCommunityChat();
+        const input = $("#driverCommunityInput");
+        if (input && draft) input.value = draft;
+        scrollDriverCommunityChat();
+      }
+    }
+  } catch (error) {
+    if (state.driverMode && state.currentSection === "driverChat") {
+      $("#infoPanel").innerHTML = `
+        <div class="section-hero driver-hero"><span>Чат водителей</span><h2>Нет доступа</h2><p>${escapeHtml(error.message)}</p></div>
+        <article class="driver-chat-locked"><strong>Проверьте верификацию</strong><span>Общий чат откроется после подтверждения аккаунта водителя.</span></article>
+      `;
+    }
+  }
+
+  if (options.startTimer && !driverChatTimer) {
+    driverChatTimer = window.setInterval(() => loadDriverCommunityChat(), 3500);
+  }
+}
+
+async function sendDriverCommunityMessage() {
+  const input = $("#driverCommunityInput");
+  const text = input?.value.trim();
+  if (!text) {
+    input?.focus();
+    return;
+  }
+
+  const button = $("#sendDriverCommunityMessage");
+  setButtonLoading(button, true, "Отправка...");
+  try {
+    const response = await fetch("/api/driver-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        destination: state.currentUser?.destination,
+        text,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "Не удалось отправить сообщение.");
+    }
+
+    state.driverChatMessages = data.messages || [];
+    state.driverChatKey = state.driverChatMessages.map((message) => message.id).join("|");
+    input.value = "";
+    $("#infoPanel").innerHTML = renderDriverCommunityChat();
+    scrollDriverCommunityChat();
+    $("#driverCommunityInput")?.focus();
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    setButtonLoading(button, false);
+  }
 }
 
 function renderStaticStars(rating = 5) {
@@ -2861,11 +3002,13 @@ function updateMenuForRole() {
   const rideItem = $('.menu-item[data-section="ride"]');
   const historyItem = $('.menu-item[data-section="history"]');
   const addressesItem = $('.menu-item[data-section="addresses"]');
+  const driverChatItem = $('.menu-item[data-section="driverChat"]');
   const profileCard = $(".profile-card");
 
   rideItem.textContent = state.driverMode ? "Лента" : "Поездка";
   historyItem.textContent = state.driverMode ? "История поездок" : "История заказов";
   addressesItem.classList.toggle("is-hidden", state.driverMode);
+  driverChatItem?.classList.toggle("is-hidden", !state.driverMode);
   $("#driverModeBtn").textContent = state.driverMode ? "Стать пассажиром" : "Стать водителем";
   profileCard.classList.toggle("is-driver-verified", state.driverMode && isDriverApproved());
   $(".profile-card span").textContent = state.driverMode
@@ -3260,6 +3403,11 @@ function bindEvents() {
       leaveAccount(accountTarget.dataset.account);
     }
 
+    if (event.target.closest("#sendDriverCommunityMessage")) {
+      sendDriverCommunityMessage();
+      return;
+    }
+
     if (event.target.closest("#addAddressBtn")) {
       addAddressFromSection();
     }
@@ -3276,6 +3424,12 @@ function bindEvents() {
     }
   });
   $("#infoPanel").addEventListener("keydown", (event) => {
+    if (event.target.closest("#driverCommunityInput") && event.key === "Enter") {
+      event.preventDefault();
+      sendDriverCommunityMessage();
+      return;
+    }
+
     const historyOrder = event.target.closest("[data-history-order]");
     if (historyOrder && (event.key === "Enter" || event.key === " ")) {
       event.preventDefault();

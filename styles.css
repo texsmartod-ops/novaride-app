@@ -3559,6 +3559,140 @@ body.dark .verification-step-header {
   justify-content: center;
 }
 
+.driver-chat-locked,
+.driver-community-chat {
+  border: 1px solid rgba(29, 103, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 45px rgba(29, 103, 255, 0.1);
+}
+
+.driver-chat-locked {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+}
+
+.driver-chat-locked strong {
+  color: var(--midnight);
+  font-size: 1.05rem;
+}
+
+.driver-chat-locked span {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.driver-community-chat {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.driver-community-log {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  max-height: 420px;
+  min-height: 260px;
+  overflow: auto;
+  padding: 4px 4px 8px;
+}
+
+.driver-community-message {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  max-width: 92%;
+}
+
+.driver-community-message.own {
+  justify-self: end;
+  grid-template-columns: minmax(0, 1fr) 42px;
+}
+
+.driver-community-message.own .driver-community-avatar {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.driver-community-message.own > div:last-child {
+  grid-column: 1;
+  grid-row: 1;
+  background: linear-gradient(135deg, var(--blue), #35d4ff);
+  color: #fff;
+}
+
+.driver-community-avatar {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #07172f, #1d67ff);
+  color: #fff;
+  font-weight: 1000;
+}
+
+.driver-community-message > div:last-child {
+  border: 1px solid rgba(166, 184, 214, 0.55);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(247, 250, 255, 0.96);
+}
+
+.driver-community-message strong {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  margin-bottom: 5px;
+  color: inherit;
+}
+
+.driver-community-message strong span {
+  color: inherit;
+  opacity: 0.62;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.driver-community-message p {
+  margin: 0;
+  line-height: 1.42;
+}
+
+.driver-community-empty {
+  align-self: center;
+  justify-self: center;
+  border: 1px dashed rgba(29, 103, 255, 0.22);
+  border-radius: 8px;
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.driver-community-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.driver-community-compose input {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 14px;
+  min-height: 54px;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.driver-community-compose .primary-action {
+  min-height: 54px;
+}
+
 .offer-card > strong {
   color: var(--blue);
   font-size: 1.12rem;
@@ -3650,6 +3784,19 @@ body.dark .verification-step-header {
     grid-template-columns: 1fr;
   }
 
+  .driver-community-compose {
+    grid-template-columns: 1fr;
+  }
+
+  .driver-community-log {
+    max-height: 360px;
+  }
+
+  .driver-community-message,
+  .driver-community-message.own {
+    max-width: 100%;
+  }
+
   .driver-order-card {
     grid-template-columns: 64px minmax(0, 1fr);
     gap: 10px;
@@ -3724,6 +3871,10 @@ body.dark .wallet-card,
 body.dark .metric-card,
 body.dark .driver-order-card,
 body.dark .driver-route-preview,
+body.dark .driver-chat-locked,
+body.dark .driver-community-chat,
+body.dark .driver-community-message > div:last-child,
+body.dark .driver-community-compose input,
 body.dark .photo-button,
 body.dark .photo-picker,
 body.dark .mode-switch,
@@ -3742,6 +3893,11 @@ body.dark .account-warning {
   border-color: rgba(255, 117, 117, 0.28);
   background: rgba(82, 24, 32, 0.72);
   color: #ffb8bd;
+}
+
+body.dark .driver-community-message.own > div:last-child {
+  background: linear-gradient(135deg, var(--blue), #35d4ff);
+  color: #fff;
 }
 
 body.dark .taxi-screen,

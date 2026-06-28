@@ -11,6 +11,7 @@ const DATA_DIR = path.join(ROOT, "data");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
 const ORDERS_FILE = path.join(DATA_DIR, "orders.json");
 const CODES_FILE = path.join(DATA_DIR, "auth-codes.json");
+const DRIVER_CHAT_FILE = path.join(DATA_DIR, "driver-chat.json");
 const CODE_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -89,6 +90,10 @@ function ensureDatabase() {
   if (!fs.existsSync(ORDERS_FILE)) {
     fs.writeFileSync(ORDERS_FILE, JSON.stringify({ orders: [] }, null, 2));
   }
+
+  if (!fs.existsSync(DRIVER_CHAT_FILE)) {
+    fs.writeFileSync(DRIVER_CHAT_FILE, JSON.stringify({ messages: [] }, null, 2));
+  }
 }
 
 function readUsers() {
@@ -119,6 +124,21 @@ function readOrders() {
 function writeOrders(orders) {
   ensureDatabase();
   fs.writeFileSync(ORDERS_FILE, JSON.stringify({ orders }, null, 2));
+}
+
+function readDriverChatMessages() {
+  ensureDatabase();
+  try {
+    const data = JSON.parse(fs.readFileSync(DRIVER_CHAT_FILE, "utf8"));
+    return Array.isArray(data.messages) ? data.messages : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeDriverChatMessages(messages) {
+  ensureDatabase();
+  fs.writeFileSync(DRIVER_CHAT_FILE, JSON.stringify({ messages }, null, 2));
 }
 
 function hasPostgresConfig() {
@@ -201,6 +221,14 @@ async function ensurePostgres() {
         order_id TEXT NOT NULL,
         sender TEXT NOT NULL,
         sender_name TEXT NOT NULL,
+        message_text TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS driver_chat_messages (
+        id TEXT PRIMARY KEY,
+        driver_destination TEXT NOT NULL,
+        driver_name TEXT NOT NULL,
         message_text TEXT NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
@@ -372,6 +400,23 @@ function publicUser(user) {
     driverVerification: user.driverVerification || { status: "none" },
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
+  };
+}
+
+function isVerifiedDriver(user) {
+  return Boolean(user?.driverVerified) || user?.driverVerification?.status === "approved";
+}
+
+function publicDriverChatMessage(message) {
+  return {
+    id: message.id,
+    driverDestination: message.driverDestination || message.driver_destination || "",
+    driverName: message.driverName || message.driver_name || "Водитель NovaRide",
+    text: message.text || message.message_text || "",
+    createdAt:
+      message.createdAt
+      || (message.created_at instanceof Date ? message.created_at.toISOString() : message.created_at)
+      || new Date().toISOString(),
   };
 }
 
@@ -1223,6 +1268,57 @@ async function appendRideMessage(orderId, payload) {
   };
   writeOrders(orders);
   return orders[index];
+}
+
+async function listDriverChatMessages(destination) {
+  const user = await findUserByDestination(destination);
+  if (!isVerifiedDriver(user)) {
+    throw new Error("Доступ к водительскому чату открыт только после верификации.");
+  }
+
+  const pool = await ensurePostgres();
+  if (pool) {
+    const result = await pool.query(
+      "SELECT * FROM driver_chat_messages ORDER BY created_at DESC LIMIT 80",
+    );
+    return result.rows.reverse().map(publicDriverChatMessage);
+  }
+
+  return readDriverChatMessages().slice(-80).map(publicDriverChatMessage);
+}
+
+async function appendDriverChatMessage(payload) {
+  const destination = normalizeDestination(payload.destination);
+  const user = await findUserByDestination(destination);
+  if (!isVerifiedDriver(user)) {
+    throw new Error("Доступ к водительскому чату открыт только после верификации.");
+  }
+
+  const text = String(payload.text || "").trim().slice(0, 500);
+  if (!text) {
+    throw new Error("Напишите сообщение.");
+  }
+
+  const message = {
+    id: createId(),
+    driverDestination: user.destination,
+    driverName: user.name || "Водитель NovaRide",
+    text,
+    createdAt: new Date().toISOString(),
+  };
+
+  const pool = await ensurePostgres();
+  if (pool) {
+    await pool.query(
+      "INSERT INTO driver_chat_messages (id, driver_destination, driver_name, message_text, created_at) VALUES ($1, $2, $3, $4, $5)",
+      [message.id, message.driverDestination, message.driverName, message.text, message.createdAt],
+    );
+    return message;
+  }
+
+  const messages = [...readDriverChatMessages(), message].slice(-200);
+  writeDriverChatMessages(messages);
+  return message;
 }
 
 async function cancelRideOrder(orderId, payload = {}) {
@@ -2207,6 +2303,32 @@ async function handleSubmitDriverVerification(req, res) {
   }
 }
 
+async function handleDriverChatList(req, res) {
+  try {
+    const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
+    const destination = normalizeDestination(url.searchParams.get("destination"));
+    if (!destination) {
+      throw new Error("Не указан аккаунт водителя.");
+    }
+
+    const messages = await listDriverChatMessages(destination);
+    sendJson(res, 200, { ok: true, messages });
+  } catch (error) {
+    sendJson(res, 403, { ok: false, error: error.message || "Водительский чат недоступен." });
+  }
+}
+
+async function handleDriverChatMessage(req, res) {
+  try {
+    const body = await readJson(req);
+    const message = await appendDriverChatMessage(body);
+    const messages = await listDriverChatMessages(body.destination);
+    sendJson(res, 200, { ok: true, message, messages });
+  } catch (error) {
+    sendJson(res, 400, { ok: false, error: error.message || "Не удалось отправить сообщение." });
+  }
+}
+
 async function handleAuthCheck(req, res) {
   try {
     const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
@@ -2556,6 +2678,16 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "POST" && req.url === "/api/driver-verification") {
     handleSubmitDriverVerification(req, res);
+    return;
+  }
+
+  if (req.method === "GET" && req.url.startsWith("/api/driver-chat")) {
+    handleDriverChatList(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/driver-chat") {
+    handleDriverChatMessage(req, res);
     return;
   }
 
