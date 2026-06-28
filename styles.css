@@ -1978,9 +1978,10 @@ body.dark .verification-step-header {
   left: 0;
   right: 0;
   top: calc(100% + 6px);
-  z-index: 25;
+  z-index: 80;
   display: none;
-  overflow: hidden;
+  overflow: hidden auto;
+  max-height: 310px;
   border: 1px solid rgba(29, 103, 255, 0.18);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.96);
@@ -1993,7 +1994,7 @@ body.dark .verification-step-header {
 }
 
 .address-suggestions button {
-  min-height: 54px;
+  min-height: 58px;
   display: grid;
   gap: 3px;
   border: 0;
@@ -2017,6 +2018,10 @@ body.dark .verification-step-header {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 800;
+}
+
+.address-suggestions button:last-child {
+  border-bottom: 0;
 }
 
 .address-suggestions button:hover {

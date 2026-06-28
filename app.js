@@ -43,6 +43,8 @@ const STOP_POINT_LABELS = ["C", "D", "E", "F", "G"];
 
 let MAPBOX_TOKEN = "";
 const ODESSA_CENTER = [30.7233, 46.4825];
+const ODESSA_SEARCH_BBOX = [30.25, 46.28, 31.05, 46.72];
+const ODESSA_GEOCODE_TYPES = "address,poi,neighborhood,locality,place,district";
 let novaMap;
 let activeMapPoint = "a";
 let pickupMarker;
@@ -80,6 +82,10 @@ const ODESSA_PLACES = [
   { name: "Сити Центр Таирова", subtitle: "просп. Небесной Сотни", aliases: ["сити центр", "city center", "сити"], center: [30.7131, 46.4096] },
   { name: "Сити Центр Котовский", subtitle: "поселок Котовского", aliases: ["city center котовский", "сити центр котовский"], center: [30.7358, 46.5825] },
   { name: "Яхт-клуб Одесса", subtitle: "побережье / Отрада", aliases: ["яхта", "яхт", "yacht", "яхт клуб"], center: [30.7647, 46.4656] },
+  { name: "Черноморского Казачества", subtitle: "Пересыпский район", aliases: ["чорноморського козацтва", "казачества"], center: [30.7227, 46.5032] },
+  { name: "Балтиморская 2", subtitle: "Одесса", aliases: ["балтиморская", "балтиморська"], center: [30.7526, 46.4353] },
+  { name: "Семена Палия 96/1", subtitle: "Пересыпский район", aliases: ["семена палия", "semena paliia"], center: [30.7652, 46.5811] },
+  { name: "Марсельская 8", subtitle: "поселок Котовского", aliases: ["марсельская", "марсельська"], center: [30.7574, 46.5844] },
 ];
 
 const iconLabels = {
@@ -936,6 +942,20 @@ function getMapLanguage() {
   return state.language === "uk" ? "uk" : "ru";
 }
 
+function getGeocodeLanguages() {
+  return state.language === "uk" ? "uk,ru,en" : "ru,uk,en";
+}
+
+function getOdessaSearchBbox() {
+  return ODESSA_SEARCH_BBOX.join(",");
+}
+
+function normalizeSearchText(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
 function formatMapboxPlace(feature) {
   const streetName = feature?.text_ru || feature?.text_uk || feature?.text || "";
   const address = feature?.address && streetName ? `${streetName} ${feature.address}` : "";
@@ -960,17 +980,82 @@ function formatSuggestionSubtitle(feature) {
   const pieces = context
     .map((item) => item.text_ru || item.text_uk || item.text)
     .filter(Boolean)
-    .filter((item) => !/ukraine|украина|україна/i.test(item));
-  return pieces.slice(0, 2).join(", ");
+    .filter((item) => !/ukraine|украина|україна/i.test(item))
+    .filter((item, index, items) => items.findIndex((candidate) => candidate.toLowerCase() === item.toLowerCase()) === index);
+  return pieces.slice(0, 3).join(", ");
 }
 
 function isUsableMapboxFeature(feature) {
-  return Array.isArray(feature?.center) && feature.center.length === 2 && Number(feature.relevance || 1) >= 0.45;
+  const center = normalizeRouteCoordinates(feature?.center);
+  if (!center || Number(feature.relevance || 1) < 0.32) return false;
+  const withinSearchArea =
+    center[0] >= ODESSA_SEARCH_BBOX[0] &&
+    center[0] <= ODESSA_SEARCH_BBOX[2] &&
+    center[1] >= ODESSA_SEARCH_BBOX[1] &&
+    center[1] <= ODESSA_SEARCH_BBOX[3];
+  const nearOdessa = getDirectDistanceKm(center, ODESSA_CENTER) <= 75;
+  return withinSearchArea || nearOdessa;
 }
 
 function matchesLocalPlace(place, query) {
   const normalized = query.toLowerCase();
   return [place.name, place.subtitle, ...(place.aliases || [])].filter(Boolean).some((value) => value.toLowerCase().includes(normalized));
+}
+
+function getMapboxFeatureScore(feature) {
+  const center = normalizeRouteCoordinates(feature?.center);
+  const distance = center ? getDirectDistanceKm(center, ODESSA_CENTER) : 1000;
+  const relevance = Number(feature?.relevance || 0.5);
+  const exactAddressBonus = feature?.place_type?.includes("address") ? 0.35 : 0;
+  const poiBonus = feature?.place_type?.includes("poi") ? 0.18 : 0;
+  return relevance + exactAddressBonus + poiBonus - distance / 180;
+}
+
+function createGeocodeUrl(query, limit = 10) {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    language: getGeocodeLanguages(),
+    country: "ua",
+    bbox: getOdessaSearchBbox(),
+    proximity: ODESSA_CENTER.join(","),
+    types: ODESSA_GEOCODE_TYPES,
+    autocomplete: "true",
+    fuzzyMatch: "true",
+    access_token: MAPBOX_TOKEN,
+  });
+  return `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?${params.toString()}`;
+}
+
+async function searchMapboxPlaces(query, limit = 10) {
+  const cleanQuery = normalizeSearchText(query);
+  if (!cleanQuery || !MAPBOX_TOKEN) return [];
+
+  const queryVariants = [
+    cleanQuery,
+    `${cleanQuery}, Одесса`,
+    `${cleanQuery}, Одеса`,
+    `${cleanQuery}, Odesa, Ukraine`,
+  ].filter((item, index, items) => items.findIndex((candidate) => candidate.toLowerCase() === item.toLowerCase()) === index);
+
+  const responses = await Promise.allSettled(
+    queryVariants.map(async (variant) => {
+      const response = await fetch(createGeocodeUrl(variant, limit));
+      if (!response.ok) return [];
+      const data = await response.json();
+      return Array.isArray(data.features) ? data.features : [];
+    }),
+  );
+
+  return responses
+    .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
+    .filter(isUsableMapboxFeature)
+    .sort((a, b) => getMapboxFeatureScore(b) - getMapboxFeatureScore(a))
+    .filter((feature, index, items) => {
+      const label = formatMapboxPlace(feature).toLowerCase();
+      const center = normalizeRouteCoordinates(feature.center)?.map((value) => value.toFixed(5)).join(",");
+      return label && items.findIndex((candidate) => formatMapboxPlace(candidate).toLowerCase() === label || normalizeRouteCoordinates(candidate.center)?.map((value) => value.toFixed(5)).join(",") === center) === index;
+    })
+    .slice(0, limit);
 }
 
 function localizeMapLabels() {
@@ -1197,7 +1282,7 @@ function setAddressPoint(point, coordinates, label) {
 }
 
 async function geocodeAddress(point, query) {
-  const cleanQuery = query.trim();
+  const cleanQuery = normalizeSearchText(query);
   if (!cleanQuery || !window.mapboxgl) return;
 
   try {
@@ -1207,11 +1292,7 @@ async function geocodeAddress(point, query) {
       return;
     }
 
-    const response = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cleanQuery}, Одесса, Україна`)}.json?limit=5&language=${getMapLanguage()}&country=ua&bbox=30.55,46.32,30.85,46.58&proximity=${ODESSA_CENTER.join(",")}&types=address,poi,place,locality,neighborhood&access_token=${MAPBOX_TOKEN}`,
-    );
-    const data = await response.json();
-    const feature = (data.features || []).find(isUsableMapboxFeature);
+    const feature = (await searchMapboxPlaces(cleanQuery, 10))[0];
 
     if (!feature) return;
 
@@ -1222,7 +1303,7 @@ async function geocodeAddress(point, query) {
 }
 
 async function geocodeStop(input) {
-  const cleanQuery = input.value.trim();
+  const cleanQuery = normalizeSearchText(input.value);
   const index = Number(input.dataset.stopIndex || 0);
   if (!cleanQuery || !window.mapboxgl) return;
   const currentStop = normalizeRouteStop(mapPoints.stops[index]);
@@ -1235,11 +1316,7 @@ async function geocodeStop(input) {
       return;
     }
 
-    const response = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cleanQuery}, Одесса, Україна`)}.json?limit=5&language=${getMapLanguage()}&country=ua&bbox=30.55,46.32,30.85,46.58&proximity=${ODESSA_CENTER.join(",")}&types=address,poi,place,locality,neighborhood&access_token=${MAPBOX_TOKEN}`,
-    );
-    const data = await response.json();
-    const feature = (data.features || []).find(isUsableMapboxFeature);
+    const feature = (await searchMapboxPlaces(cleanQuery, 10))[0];
     if (!feature) return;
 
     const label = formatMapboxPlace(feature);
@@ -1259,7 +1336,7 @@ function hideAddressSuggestions(point) {
 
 async function showAddressSuggestions(point, query) {
   const list = document.querySelector(`[data-suggestions="${point}"]`);
-  const cleanQuery = query.trim();
+  const cleanQuery = normalizeSearchText(query);
 
   if (!list || cleanQuery.length < 2) {
     hideAddressSuggestions(point);
@@ -1273,11 +1350,7 @@ async function showAddressSuggestions(point, query) {
   }));
 
   try {
-    const response = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(`${cleanQuery}, Одесса, Україна`)}.json?limit=6&language=${getMapLanguage()}&country=ua&bbox=30.55,46.32,30.85,46.58&proximity=${ODESSA_CENTER.join(",")}&types=address,poi,place,locality,neighborhood&access_token=${MAPBOX_TOKEN}`,
-    );
-    const data = await response.json();
-    const remote = (data.features || []).filter(isUsableMapboxFeature).map((feature) => ({
+    const remote = (await searchMapboxPlaces(cleanQuery, 12)).map((feature) => ({
       label: formatMapboxPlace(feature),
       subtitle: formatSuggestionSubtitle(feature),
       center: feature.center,
@@ -1285,7 +1358,7 @@ async function showAddressSuggestions(point, query) {
 
     const suggestions = [...known, ...remote]
       .filter((item, index, items) => item.label && items.findIndex((candidate) => candidate.label === item.label) === index)
-      .slice(0, 6);
+      .slice(0, 10);
 
     list.innerHTML = suggestions
       .map(
