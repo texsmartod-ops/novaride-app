@@ -29,7 +29,6 @@ const state = {
   ],
 };
 
-const PRICE_PER_KM = 15;
 const PENDING_AUTH_KEY = "novaride_pending_auth";
 const VERIFIED_AUTH_KEY = "novaride_verified_auth";
 const PERSISTENT_AUTH_KEY = "novaride_persistent_auth";
@@ -884,9 +883,20 @@ function selectClass(card) {
 
 function updateTripPrice(distanceKm = state.tripDistanceKm) {
   state.tripDistanceKm = Math.max(1, distanceKm || 1);
-  state.selectedPrice = Math.round(state.tripDistanceKm * PRICE_PER_KM);
-  $("#priceLabel").textContent = `${state.selectedPrice} грн`;
-  $("#distanceLabel").textContent = `${state.tripDistanceKm.toFixed(1)} км · 15 грн/км`;
+  $("#distanceLabel").textContent = `Маршрут: ${state.tripDistanceKm.toFixed(1)} км`;
+}
+
+function getClientRidePrice() {
+  const input = $("#clientPriceInput");
+  const value = Number.parseInt(input?.value || "", 10);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function syncClientRidePrice() {
+  const price = getClientRidePrice();
+  if (price > 0) {
+    state.selectedPrice = price;
+  }
 }
 
 function setRouteGeoJson(coordinates) {
@@ -3026,6 +3036,14 @@ async function createRideOrder() {
     return;
   }
 
+  const clientPrice = getClientRidePrice();
+  if (!clientPrice) {
+    alert("Укажите цену, которую вы готовы предложить водителю.");
+    $("#clientPriceInput")?.focus();
+    return;
+  }
+  state.selectedPrice = clientPrice;
+
   setButtonLoading(button, true, "Создаем заказ...");
   let created = false;
 
@@ -3042,7 +3060,7 @@ async function createRideOrder() {
         b: mapPoints.b,
         stops: getRouteStops(),
         carClass: selectedClass,
-        price: state.selectedPrice,
+        price: clientPrice,
         distanceKm: state.tripDistanceKm,
         comment: $("#rideComment").value.trim(),
       }),
@@ -3238,6 +3256,7 @@ function bindEvents() {
     $("#accountExistsWarning").classList.add("is-hidden");
   });
   $("#authForm").addEventListener("submit", finishAuth);
+  $("#clientPriceInput")?.addEventListener("input", syncClientRidePrice);
   bindAddressSearch();
   $("#ridePanel").addEventListener("pointerdown", (event) => {
     const suggestion = event.target.closest(".address-suggestions button");

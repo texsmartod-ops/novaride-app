@@ -2331,14 +2331,44 @@ body.dark .verification-step-header {
   flex-wrap: wrap;
 }
 
+.price-glass label {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+}
+
 .price-glass span {
   color: var(--muted);
   font-weight: 800;
 }
 
 .price-glass strong {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
   color: var(--blue);
   font-size: 1.35rem;
+}
+
+.price-glass input {
+  width: min(180px, 52vw);
+  min-height: 48px;
+  border: 1px solid rgba(29, 103, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  color: var(--blue);
+  font: inherit;
+  font-size: 1.35rem;
+  font-weight: 1000;
+  text-align: right;
+}
+
+.price-glass input:focus {
+  outline: 0;
+  border-color: rgba(29, 103, 255, 0.5);
+  box-shadow: 0 0 0 4px rgba(29, 103, 255, 0.1);
 }
 
 .price-glass em {
@@ -3981,6 +4011,12 @@ body.dark .driver-private-note,
 body.dark .bid-offer-field {
   border-color: rgba(53, 212, 255, 0.18);
   background: rgba(12, 33, 63, 0.76);
+}
+
+body.dark .price-glass input {
+  border-color: rgba(53, 212, 255, 0.18);
+  background: rgba(12, 33, 63, 0.76);
+  color: #6ee7ff;
 }
 
 body.dark .driver-private-note strong,

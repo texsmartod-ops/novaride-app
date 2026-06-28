@@ -12,7 +12,7 @@
     <link rel="icon" href="/assets/novadrive-icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
     <link href="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.css" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css?v=20260628-005" />
+    <link rel="stylesheet" href="/styles.css?v=20260628-006" />
   </head>
   <body>
     <main class="app-shell">
@@ -283,10 +283,12 @@
                 </label>
               </div>
 
-              <div class="price-glass">
-                <span>Класс выбран</span>
-                <strong id="priceLabel">150 грн</strong>
-                <em id="distanceLabel">~10 км</em>
+              <div class="price-glass client-price-card">
+                <label for="clientPriceInput">
+                  <span>Ваша цена за поездку</span>
+                  <strong><input id="clientPriceInput" type="number" min="1" step="1" value="150" inputmode="numeric" aria-label="Цена клиента в гривнах" /> грн</strong>
+                  <em id="distanceLabel">Маршрут: ~10 км</em>
+                </label>
               </div>
 
               <button class="primary-action order-button" id="orderBtn">Найти водителя</button>
@@ -323,7 +325,7 @@
     </main>
 
     <script src="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.js"></script>
-    <script src="/app.js?v=20260628-005"></script>
+    <script src="/app.js?v=20260628-006"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
