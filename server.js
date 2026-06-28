@@ -374,6 +374,14 @@ function createId() {
   return crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex");
 }
 
+function getSessionSecret() {
+  return process.env.SESSION_SECRET || process.env.RESEND_API_KEY || process.env.TURBOSMS_TOKEN || "novaride-local-session-secret";
+}
+
+function signSessionPayload(payload) {
+  return crypto.createHmac("sha256", getSessionSecret()).update(payload).digest("base64url");
+}
+
 async function findUserByDestination(destination) {
   const pool = await ensurePostgres();
   if (pool) {
@@ -495,10 +503,12 @@ function publicOrder(order) {
 }
 
 function createSession(destination) {
-  const token = createId();
+  const expiresAt = Date.now() + SESSION_TTL_MS;
+  const payload = Buffer.from(JSON.stringify({ destination, expiresAt })).toString("base64url");
+  const token = `${payload}.${signSessionPayload(payload)}`;
   sessions.set(token, {
     destination,
-    expiresAt: Date.now() + SESSION_TTL_MS,
+    expiresAt,
   });
   return token;
 }
@@ -584,8 +594,26 @@ async function upsertSocialUser(profile) {
 }
 
 function getSession(token) {
+  if (!token) return null;
+
   const session = sessions.get(token);
-  if (!session) return null;
+  if (!session) {
+    const [payload, signature] = String(token).split(".");
+    if (!payload || !signature || signSessionPayload(payload) !== signature) return null;
+
+    try {
+      const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+      const expiresAt = Number(parsed.expiresAt || 0);
+      if (!parsed.destination || Date.now() > expiresAt) return null;
+
+      return {
+        destination: normalizeDestination(parsed.destination),
+        expiresAt,
+      };
+    } catch {
+      return null;
+    }
+  }
 
   if (Date.now() > session.expiresAt) {
     sessions.delete(token);

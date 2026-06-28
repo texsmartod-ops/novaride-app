@@ -12,7 +12,7 @@
     <link rel="icon" href="/assets/novadrive-icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
     <link href="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.css" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css?v=20260628-003" />
+    <link rel="stylesheet" href="/styles.css?v=20260628-004" />
   </head>
   <body>
     <main class="app-shell">
@@ -151,6 +151,7 @@
               <button class="segment" type="button" data-gender="female">Женщина</button>
             </div>
             <button class="primary-action" type="submit" id="finishAuthBtn">Войти в приложение</button>
+            <p class="form-error is-hidden" id="profileError">Не удалось сохранить профиль.</p>
           </div>
         </form>
       </section>
@@ -322,7 +323,7 @@
     </main>
 
     <script src="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.js"></script>
-    <script src="/app.js?v=20260628-003"></script>
+    <script src="/app.js?v=20260628-004"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {

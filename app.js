@@ -751,9 +751,11 @@ async function finishAuth(event) {
   }
 
   const sessionToken = restorePendingAuthToken();
+  $("#profileError")?.classList.add("is-hidden");
 
   if (!sessionToken && !state.authDestination) {
-    alert("Сначала подтвердите телефон или email кодом.");
+    $("#profileError").textContent = "Сначала подтвердите телефон или email кодом.";
+    $("#profileError").classList.remove("is-hidden");
     setAuthStep("start");
     return;
   }
@@ -783,7 +785,8 @@ async function finishAuth(event) {
     savePersistentAuth(data.user);
     enterApp(data.user);
   } catch (error) {
-    alert(error.message);
+    $("#profileError").textContent = error.message || "Не удалось сохранить профиль.";
+    $("#profileError").classList.remove("is-hidden");
   } finally {
     setButtonLoading($("#finishAuthBtn"), false);
   }
