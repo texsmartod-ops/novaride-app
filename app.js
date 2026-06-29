@@ -89,6 +89,61 @@ const ODESSA_PLACES = [
   { name: "Марсельская 8", subtitle: "поселок Котовского", aliases: ["марсельская", "марсельська"], center: [30.7574, 46.5844] },
 ];
 
+const ODESSA_COMPLEXES = [
+  { name: "17 Жемчужина", address: "ул. Асташкина, 29/2" },
+  { name: "19 Жемчужина", address: "Французский бульвар, 60Г" },
+  { name: "27 Жемчужина", address: "ул. Каманина, 16А" },
+  { name: "32 Жемчужина", address: "ул. Каманина, 16А" },
+  { name: "36 Жемчужина", address: "ул. Генуэзская" },
+  { name: "43 Жемчужина", address: "ул. Каманина" },
+  { name: "44 Жемчужина", address: "ул. Каманина" },
+  { name: "45 Жемчужина", address: "ул. Каманина" },
+  { name: "48 Жемчужина", address: "ул. Каманина" },
+  { name: "49 Жемчужина", address: "ул. Каманина" },
+  { name: "51 Жемчужина", address: "ул. Генуэзская" },
+  { name: "53 Жемчужина", address: "ул. Архитекторская" },
+  { name: "57 Жемчужина", address: "ул. Архитекторская" },
+  { name: "58 Жемчужина", address: "ул. Архитекторская" },
+  { name: "60 Жемчужина", address: "ул. Краснова" },
+  { name: "63 Жемчужина", address: "ул. Краснова" },
+  { name: "KADORR City", address: "ул. Краснова" },
+  { name: "Акрополь", address: "Фонтанская дорога, 25" },
+  { name: "Эллада", address: "ул. Генуэзская, 1" },
+  { name: "Посейдон", address: "ул. Дача Ковалевского, 5" },
+  { name: "Аквамарин", address: "Фонтанская дорога, 118А" },
+  { name: "Авиньон", address: "ул. Дача Ковалевского, 91" },
+  { name: "Атмосфера", address: "Курортный переулок" },
+  { name: "Манхэттен", address: "ул. Академика Филатова, 2" },
+  { name: "Sky City", address: "ул. Варненская, 27А/2" },
+  { name: "Real Park", address: "Овидиопольская дорога, 3/1" },
+  { name: "Artville", address: "7 км Овидиопольской дороги" },
+  { name: "Одесса Сити", address: "ул. Михаила Грушевского" },
+  { name: "Пространство на Радостной", address: "ул. Радостная" },
+  { name: "Пространство на Донского", address: "ул. Дмитрия Донского" },
+  { name: "Пространство у Стамбульского парка", address: "ул. Приморская" },
+  { name: "Прохоровский квартал", address: "ул. Прохоровская, 40" },
+  { name: "Greenwood", address: "Французский бульвар, 85/5" },
+  { name: "Unity Towers", address: "Аркадийское плато, 5" },
+  { name: "Лимнос", address: "ул. Педагогическая, 23" },
+  { name: "Апельсин", address: "ул. Среднефонтанская, 35" },
+  { name: "Кандинский", address: "Французский бульвар, 63/65" },
+  { name: "Sea Town", address: "ул. Академика Сахарова, 14" },
+  { name: "Золотая Эра", address: "Южная дорога, 3" },
+  { name: "Наследие Дерибаса", address: "Военный спуск, 13А" },
+  { name: "Люксембург", address: "ул. Александра Свища, 24" },
+  { name: "Балковский", address: "ул. Балковская, 137Г" },
+  { name: "Чудо Город", address: "Среднефонтанская площадь" },
+  { name: "Первый Французский", address: "Французский бульвар" },
+  { name: "Бельгийский Дом", address: "ул. Маршала Говорова" },
+  { name: "ITown", address: "Софиевская улица" },
+  { name: "Derby Style House", address: "Фонтанская дорога, 6А" },
+  { name: "Aqua Marine", address: "Фонтанская дорога, 118А" },
+  { name: "Таировские Сады", address: "ул. Академика Вильямса" },
+  { name: "Скай Сити", address: "ул. Варненская, 27А" },
+  { name: "Золотые Столбы", address: "Николаевская дорога" },
+  { name: "Сады Ривьеры", address: "с. Фонтанка, ул. Чехова" },
+];
+
 const iconLabels = {
   home: "Дом",
   work: "Работа",
@@ -1113,6 +1168,29 @@ function getLocalStreetSuggestions(query, limit = 8) {
     });
 }
 
+function matchesComplex(complex, query) {
+  const normalized = normalizeStreetMatch(query);
+  return [complex.name, complex.address]
+    .filter(Boolean)
+    .some((value) => normalizeStreetMatch(value).includes(normalized) || normalized.includes(normalizeStreetMatch(value)));
+}
+
+function getComplexSuggestions(query, limit = 6) {
+  const cleanQuery = normalizeSearchText(query);
+  if (cleanQuery.length < 2) return [];
+
+  return ODESSA_COMPLEXES
+    .filter((complex) => matchesComplex(complex, cleanQuery))
+    .sort((a, b) => a.name.length - b.name.length || a.name.localeCompare(b.name, "ru"))
+    .slice(0, limit)
+    .map((complex) => ({
+      label: complex.name,
+      subtitle: complex.address,
+      query: `${complex.address}, Одесса`,
+      source: "residential-complex",
+    }));
+}
+
 function formatMapboxPlace(feature) {
   const streetName = feature?.text_ru || feature?.text_uk || feature?.text || "";
   const address = feature?.address && streetName ? `${streetName} ${feature.address}` : "";
@@ -1175,6 +1253,18 @@ async function resolveAddressCandidate(query) {
       center: knownPlace.center,
       subtitle: knownPlace.subtitle || "Одесса",
     };
+  }
+
+  const knownComplex = ODESSA_COMPLEXES.find((complex) => matchesComplex(complex, cleanQuery));
+  if (knownComplex) {
+    const feature = (await searchMapboxPlaces(`${knownComplex.address}, Одесса`, 10))[0];
+    if (feature) {
+      return {
+        label: knownComplex.name,
+        center: feature.center,
+        subtitle: knownComplex.address,
+      };
+    }
   }
 
   const feature = (await searchMapboxPlaces(cleanQuery, 10))[0];
@@ -1590,9 +1680,10 @@ async function showAddressSuggestions(point, query) {
     subtitle: place.subtitle || "Одесса",
     center: place.center,
   }));
+  const complexes = getComplexSuggestions(cleanQuery, 6);
   const streets = getLocalStreetSuggestions(cleanQuery, 8);
 
-  renderAddressSuggestionList(list, [...known, ...streets].slice(0, 10));
+  renderAddressSuggestionList(list, [...known, ...complexes, ...streets].slice(0, 10));
 
   try {
     if (!odessaStreetNames.length) await loadOdessaStreets();
@@ -1603,13 +1694,14 @@ async function showAddressSuggestions(point, query) {
     }));
 
     const freshStreets = getLocalStreetSuggestions(cleanQuery, 8);
-    const suggestions = [...known, ...freshStreets, ...remote]
+    const freshComplexes = getComplexSuggestions(cleanQuery, 6);
+    const suggestions = [...known, ...freshComplexes, ...freshStreets, ...remote]
       .filter((item, index, items) => item.label && items.findIndex((candidate) => candidate.label === item.label) === index)
       .slice(0, 10);
 
     renderAddressSuggestionList(list, suggestions);
   } catch {
-    renderAddressSuggestionList(list, [...known, ...getLocalStreetSuggestions(cleanQuery, 8)].slice(0, 10));
+    renderAddressSuggestionList(list, [...known, ...getComplexSuggestions(cleanQuery, 6), ...getLocalStreetSuggestions(cleanQuery, 8)].slice(0, 10));
   }
 }
 
@@ -3628,7 +3720,8 @@ function bindEvents() {
     } else {
       const result = await resolveAddressCandidate(suggestion.dataset.query || label);
       if (result?.center) {
-        setAddressPoint(point, result.center, label);
+        const displayLabel = suggestion.dataset.source === "residential-complex" ? `${label}, ${suggestion.querySelector("span")?.textContent.trim() || result.subtitle}` : label;
+        setAddressPoint(point, result.center, displayLabel);
       } else {
         await geocodeAddress(point, suggestion.dataset.query || label);
       }
@@ -3890,7 +3983,9 @@ function bindEvents() {
       event.preventDefault();
       const input = $("#newAddressValue");
       if (input) {
-        input.value = savedSuggestion.dataset.label || savedSuggestion.querySelector("strong")?.textContent.trim() || savedSuggestion.textContent.trim();
+        const savedLabel = savedSuggestion.dataset.label || savedSuggestion.querySelector("strong")?.textContent.trim() || savedSuggestion.textContent.trim();
+        const savedSubtitle = savedSuggestion.querySelector("span")?.textContent.trim() || "";
+        input.value = savedSuggestion.dataset.source === "residential-complex" && savedSubtitle ? `${savedLabel}, ${savedSubtitle}` : savedLabel;
         input.dataset.selectedCenter = savedSuggestion.dataset.center || "";
         input.dataset.selectedQuery = savedSuggestion.dataset.query || input.value;
       }
