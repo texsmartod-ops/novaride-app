@@ -123,6 +123,7 @@ const sections = {
           .map(
             (item) => `
               <article class="list-card address-card icon-${item.icon}" data-address="${item.address}">
+                ${Array.isArray(item.center) ? `<span class="address-coordinates" data-center="${item.center.join(",")}"></span>` : ""}
                 <i class="address-icon"></i>
                 <div class="address-copy">
                   <strong>${item.title}</strong>
@@ -1017,6 +1018,29 @@ function matchesLocalPlace(place, query) {
   return [place.name, place.subtitle, ...(place.aliases || [])].filter(Boolean).some((value) => value.toLowerCase().includes(normalized));
 }
 
+async function resolveAddressCandidate(query) {
+  const cleanQuery = normalizeSearchText(query);
+  if (!cleanQuery) return null;
+
+  const knownPlace = ODESSA_PLACES.find((place) => matchesLocalPlace(place, cleanQuery) || cleanQuery.toLowerCase().includes(place.name.toLowerCase()));
+  if (knownPlace) {
+    return {
+      label: knownPlace.name,
+      center: knownPlace.center,
+      subtitle: knownPlace.subtitle || "Одесса",
+    };
+  }
+
+  const feature = (await searchMapboxPlaces(cleanQuery, 10))[0];
+  if (!feature) return null;
+
+  return {
+    label: formatMapboxPlace(feature),
+    center: feature.center,
+    subtitle: formatSuggestionSubtitle(feature),
+  };
+}
+
 function getMapboxFeatureScore(feature) {
   const center = normalizeRouteCoordinates(feature?.center);
   const distance = center ? getDirectDistanceKm(center, ODESSA_CENTER) : 1000;
@@ -1301,17 +1325,9 @@ async function geocodeAddress(point, query) {
   if (!cleanQuery || !window.mapboxgl) return;
 
   try {
-    const knownPlace = ODESSA_PLACES.find((place) => matchesLocalPlace(place, cleanQuery) || cleanQuery.toLowerCase().includes(place.name.toLowerCase()));
-    if (knownPlace) {
-      setAddressPoint(point, knownPlace.center, knownPlace.name);
-      return;
-    }
-
-    const feature = (await searchMapboxPlaces(cleanQuery, 10))[0];
-
-    if (!feature) return;
-
-    setAddressPoint(point, feature.center, formatMapboxPlace(feature));
+    const result = await resolveAddressCandidate(cleanQuery);
+    if (!result) return;
+    setAddressPoint(point, result.center, result.label);
   } catch {
     // Keep the typed address if geocoding is temporarily unavailable.
   }
@@ -1325,17 +1341,9 @@ async function geocodeStop(input) {
   if (currentStop.coordinates && input.dataset.selectedLabel === cleanQuery) return;
 
   try {
-    const knownPlace = ODESSA_PLACES.find((place) => matchesLocalPlace(place, cleanQuery) || cleanQuery.toLowerCase().includes(place.name.toLowerCase()));
-    if (knownPlace) {
-      setAddressPoint(`stop-${index}`, knownPlace.center, knownPlace.name);
-      return;
-    }
-
-    const feature = (await searchMapboxPlaces(cleanQuery, 10))[0];
-    if (!feature) return;
-
-    const label = formatMapboxPlace(feature);
-    setAddressPoint(`stop-${index}`, feature.center, label);
+    const result = await resolveAddressCandidate(cleanQuery);
+    if (!result) return;
+    setAddressPoint(`stop-${index}`, result.center, result.label);
   } catch {
     // Keep the typed stop address if geocoding is temporarily unavailable.
   }
@@ -1347,6 +1355,20 @@ function hideAddressSuggestions(point) {
     list.innerHTML = "";
     list.classList.remove("is-open");
   }
+}
+
+function renderAddressSuggestionList(list, suggestions) {
+  list.innerHTML = suggestions
+    .map(
+      (item) => `
+        <button type="button" data-center="${item.center.join(",")}" data-label="${item.label}">
+          <strong>${item.label}</strong>
+          <span>${item.subtitle || "Одесса"}</span>
+        </button>
+      `,
+    )
+    .join("");
+  list.classList.toggle("is-open", suggestions.length > 0);
 }
 
 async function showAddressSuggestions(point, query) {
@@ -1364,6 +1386,8 @@ async function showAddressSuggestions(point, query) {
     center: place.center,
   }));
 
+  renderAddressSuggestionList(list, known.slice(0, 10));
+
   try {
     const remote = (await searchMapboxPlaces(cleanQuery, 12)).map((feature) => ({
       label: formatMapboxPlace(feature),
@@ -1375,29 +1399,9 @@ async function showAddressSuggestions(point, query) {
       .filter((item, index, items) => item.label && items.findIndex((candidate) => candidate.label === item.label) === index)
       .slice(0, 10);
 
-    list.innerHTML = suggestions
-      .map(
-        (item) => `
-          <button type="button" data-center="${item.center.join(",")}" data-label="${item.label}">
-            <strong>${item.label}</strong>
-            <span>${item.subtitle || "Одесса"}</span>
-          </button>
-        `,
-      )
-      .join("");
-    list.classList.toggle("is-open", suggestions.length > 0);
+    renderAddressSuggestionList(list, suggestions);
   } catch {
-    list.innerHTML = known
-      .map(
-        (item) => `
-          <button type="button" data-center="${item.center.join(",")}" data-label="${item.label}">
-            <strong>${item.label}</strong>
-            <span>${item.subtitle || "Одесса"}</span>
-          </button>
-        `,
-      )
-      .join("");
-    list.classList.toggle("is-open", known.length > 0);
+    renderAddressSuggestionList(list, known.slice(0, 10));
   }
 }
 
@@ -1506,11 +1510,20 @@ function addAddressFromSection() {
   $("#newAddressName")?.focus();
 }
 
-function saveNewAddressFromForm() {
+async function saveNewAddressFromForm() {
   const title = $("#newAddressName")?.value.trim();
   const address = $("#newAddressValue")?.value.trim();
   if (!title || !address) return;
-  state.savedAddresses.push({ icon: "custom", title, address });
+
+  const selectedCenter = $("#newAddressValue")?.dataset.selectedCenter?.split(",").map(Number);
+  const resolved = normalizeRouteCoordinates(selectedCenter) ? { label: address, center: selectedCenter } : await resolveAddressCandidate(address);
+  if (!resolved?.center) {
+    alert("Адрес не найден. Выберите вариант из списка подсказок.");
+    $("#newAddressValue")?.focus();
+    return;
+  }
+
+  state.savedAddresses.push({ icon: "custom", title, address: resolved.label || address, center: resolved.center });
   persistSavedAddresses();
   showSection("addresses");
 }
@@ -1532,12 +1545,19 @@ function bindSavedAddressSearch() {
   });
 }
 
-async function useSavedAddressForRide(address) {
+async function useSavedAddressForRide(address, center) {
   if (!address) return;
   showSection("ride");
   const input = $("#toInput");
   if (input) input.value = address;
-  await geocodeAddress("b", address);
+
+  const safeCenter = normalizeRouteCoordinates(center);
+  if (safeCenter) {
+    setAddressPoint("b", safeCenter, address);
+  } else {
+    await geocodeAddress("b", address);
+  }
+
   window.setTimeout(() => {
     initMapboxMap();
     novaMap?.resize();
@@ -3633,7 +3653,10 @@ function bindEvents() {
     if (savedSuggestion) {
       event.preventDefault();
       const input = $("#newAddressValue");
-      if (input) input.value = savedSuggestion.dataset.label || savedSuggestion.querySelector("strong")?.textContent.trim() || savedSuggestion.textContent.trim();
+      if (input) {
+        input.value = savedSuggestion.dataset.label || savedSuggestion.querySelector("strong")?.textContent.trim() || savedSuggestion.textContent.trim();
+        input.dataset.selectedCenter = savedSuggestion.dataset.center || "";
+      }
       hideAddressSuggestions("saved-address");
       return;
     }
@@ -3641,7 +3664,8 @@ function bindEvents() {
     const addressTarget = event.target.closest(".use-address");
     if (addressTarget) {
       const card = addressTarget.closest("[data-address]");
-      useSavedAddressForRide(card.dataset.address);
+      const center = card.querySelector(".address-coordinates")?.dataset.center?.split(",").map(Number);
+      useSavedAddressForRide(card.dataset.address, center);
       return;
     }
   });
