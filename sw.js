@@ -1,9 +1,9 @@
-const CACHE_NAME = "novaride-shell-v19";
+const CACHE_NAME = "novaride-shell-v20";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
-  "/styles.css?v=20260629-001",
-  "/app.js?v=20260629-001",
+  "/styles.css?v=20260629-002",
+  "/app.js?v=20260629-002",
   "/manifest.webmanifest",
   "/assets/novadrive-logo.png",
   "/assets/novadrive-icon-192.png",

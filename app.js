@@ -111,8 +111,11 @@ const sections = {
       <div class="section-hero"><span>Быстрый старт</span><h2>Мои адреса</h2><p>Любимые точки Одессы можно вызвать одним касанием.</p></div>
       <button class="add-address-card" id="addAddressBtn" type="button"><span>+</span><strong>Добавить адрес</strong><em>дом, офис, кафе или свое название</em></button>
       <div class="address-create-form is-hidden" id="addressCreateForm">
-        <input id="newAddressName" placeholder="Название: Дом, работа, кафе" />
-        <input id="newAddressValue" placeholder="Адрес или место в Одессе" />
+        <input id="newAddressName" placeholder="Название: Дом, работа, кафе" autocomplete="off" />
+        <div class="address-field saved-address-field">
+          <input id="newAddressValue" placeholder="Адрес или место в Одессе" autocomplete="off" />
+          <div class="address-suggestions" data-suggestions="saved-address"></div>
+        </div>
         <button class="primary-action" id="saveNewAddressBtn" type="button">Сохранить адрес</button>
       </div>
       <div class="address-grid">
@@ -121,9 +124,11 @@ const sections = {
             (item) => `
               <article class="list-card address-card icon-${item.icon}" data-address="${item.address}">
                 <i class="address-icon"></i>
-                <strong>${item.title}</strong>
-                <span>${item.address}</span>
-                <button class="mini-action use-address" type="button">выбрать</button>
+                <div class="address-copy">
+                  <strong>${item.title}</strong>
+                  <span>${item.address}</span>
+                </div>
+                <button class="mini-action use-address" type="button">В поездку</button>
               </article>
             `,
           )
@@ -1497,6 +1502,7 @@ function applyLanguage(lang) {
 
 function addAddressFromSection() {
   $("#addressCreateForm")?.classList.toggle("is-hidden");
+  bindSavedAddressSearch();
   $("#newAddressName")?.focus();
 }
 
@@ -1507,6 +1513,36 @@ function saveNewAddressFromForm() {
   state.savedAddresses.push({ icon: "custom", title, address });
   persistSavedAddresses();
   showSection("addresses");
+}
+
+function bindSavedAddressSearch() {
+  const input = $("#newAddressValue");
+  if (!input || input.dataset.boundSearch) return;
+  input.dataset.boundSearch = "true";
+
+  input.addEventListener("input", () => {
+    clearTimeout(addressSearchTimer);
+    addressSearchTimer = window.setTimeout(() => showAddressSuggestions("saved-address", input.value), 220);
+  });
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    hideAddressSuggestions("saved-address");
+  });
+}
+
+async function useSavedAddressForRide(address) {
+  if (!address) return;
+  showSection("ride");
+  const input = $("#toInput");
+  if (input) input.value = address;
+  await geocodeAddress("b", address);
+  window.setTimeout(() => {
+    initMapboxMap();
+    novaMap?.resize();
+    updateRouteLine();
+  }, 80);
 }
 
 async function persistSavedAddresses() {
@@ -3585,17 +3621,28 @@ function bindEvents() {
 
     if (event.target.closest("#addAddressBtn")) {
       addAddressFromSection();
+      return;
     }
 
     if (event.target.closest("#saveNewAddressBtn")) {
       saveNewAddressFromForm();
+      return;
+    }
+
+    const savedSuggestion = event.target.closest('[data-suggestions="saved-address"] button');
+    if (savedSuggestion) {
+      event.preventDefault();
+      const input = $("#newAddressValue");
+      if (input) input.value = savedSuggestion.dataset.label || savedSuggestion.querySelector("strong")?.textContent.trim() || savedSuggestion.textContent.trim();
+      hideAddressSuggestions("saved-address");
+      return;
     }
 
     const addressTarget = event.target.closest(".use-address");
     if (addressTarget) {
       const card = addressTarget.closest("[data-address]");
-      $("#toInput").value = card.dataset.address;
-      showSection("ride");
+      useSavedAddressForRide(card.dataset.address);
+      return;
     }
   });
   $("#infoPanel").addEventListener("keydown", (event) => {
