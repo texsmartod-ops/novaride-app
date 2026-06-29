@@ -121,15 +121,18 @@ const sections = {
       <div class="address-grid">
         ${state.savedAddresses
           .map(
-            (item) => `
-              <article class="list-card address-card icon-${item.icon}" data-address="${item.address}">
+            (item, index) => `
+              <article class="list-card address-card icon-${item.icon}" data-address-index="${index}" data-address="${item.address}">
                 ${Array.isArray(item.center) ? `<span class="address-coordinates" data-center="${item.center.join(",")}"></span>` : ""}
                 <i class="address-icon"></i>
                 <div class="address-copy">
                   <strong>${item.title}</strong>
                   <span>${item.address}</span>
                 </div>
-                <button class="mini-action use-address" type="button">В поездку</button>
+                <div class="address-actions">
+                  <button class="mini-action use-address" type="button">В поездку</button>
+                  <button class="mini-action danger-action delete-address" type="button">Удалить</button>
+                </div>
               </article>
             `,
           )
@@ -1563,6 +1566,14 @@ async function useSavedAddressForRide(address, center) {
     novaMap?.resize();
     updateRouteLine();
   }, 80);
+}
+
+function deleteSavedAddress(card) {
+  const index = Number(card?.dataset.addressIndex);
+  if (!Number.isInteger(index) || index < 0 || index >= state.savedAddresses.length) return;
+  state.savedAddresses.splice(index, 1);
+  persistSavedAddresses();
+  showSection("addresses");
 }
 
 async function persistSavedAddresses() {
@@ -3667,6 +3678,12 @@ function bindEvents() {
       const card = addressTarget.closest("[data-address]");
       const center = card.querySelector(".address-coordinates")?.dataset.center?.split(",").map(Number);
       useSavedAddressForRide(card.dataset.address, center);
+      return;
+    }
+
+    const deleteAddressButton = event.target.closest(".delete-address");
+    if (deleteAddressButton) {
+      deleteSavedAddress(deleteAddressButton.closest("[data-address]"));
       return;
     }
   });
