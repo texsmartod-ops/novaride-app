@@ -1015,6 +1015,52 @@ function normalizeSearchText(value) {
     .replace(/\s+/g, " ");
 }
 
+function stripPostalCodes(value) {
+  return normalizeSearchText(value)
+    .replace(/(^|,\s*)\b\d{5}\b(?=,|$)/g, "")
+    .replace(/\s*,\s*,+/g, ",")
+    .replace(/^\s*,\s*|\s*,\s*$/g, "")
+    .trim();
+}
+
+function splitAddressSearchQuery(value) {
+  const original = stripPostalCodes(value);
+  const entranceMatch = original.match(/\b(?:подъезд|парадная|під'?їзд)\s*№?\s*([\p{L}\d/-]+)/iu);
+  const entrance = entranceMatch ? `подъезд ${entranceMatch[1]}` : "";
+  const geocodeQuery = normalizeSearchText(
+    original
+      .replace(/\b(?:подъезд|парадная|під'?їзд)\s*№?\s*[\p{L}\d/-]+/giu, "")
+      .replace(/\b(?:дом|д\.?|будинок|буд\.?)\s*№?\s*([\p{L}\d/-]+)/giu, "$1")
+      .replace(/\s*,\s*,+/g, ",")
+      .replace(/,\s*$/g, ""),
+  );
+
+  return {
+    original,
+    geocodeQuery,
+    entrance,
+  };
+}
+
+function formatResolvedAddressLabel(label, typedQuery) {
+  const cleanLabel = stripPostalCodes(label);
+  const { entrance } = splitAddressSearchQuery(typedQuery);
+  return entrance && !cleanLabel.toLowerCase().includes(entrance.toLowerCase()) ? `${cleanLabel}, ${entrance}` : cleanLabel;
+}
+
+function getAddressHouseNumber(value) {
+  const query = splitAddressSearchQuery(value).geocodeQuery;
+  const match = query.match(/(?:^|\s)(\d+[\p{L}\d/-]*)\s*$/iu);
+  return match ? match[1] : "";
+}
+
+function getStreetSearchNeedles(value) {
+  const geocodeQuery = splitAddressSearchQuery(value).geocodeQuery;
+  const normalized = normalizeSearchText(geocodeQuery);
+  const withoutHouse = normalizeSearchText(normalized.replace(/\s+\d+[\p{L}\d/-]*$/iu, ""));
+  return [normalized, withoutHouse].filter((item, index, items) => item.length >= 2 && items.indexOf(item) === index);
+}
+
 function normalizeStreetMatch(value) {
   return normalizeSearchText(value)
     .toLowerCase()
@@ -1040,31 +1086,38 @@ async function loadOdessaStreets() {
 }
 
 function getLocalStreetSuggestions(query, limit = 8) {
-  const needle = normalizeStreetMatch(query);
-  if (needle.length < 2 || !odessaStreetNames.length) return [];
+  const needles = getStreetSearchNeedles(query).map(normalizeStreetMatch);
+  if (!needles.length || !odessaStreetNames.length) return [];
+  const house = getAddressHouseNumber(query);
+  const { entrance } = splitAddressSearchQuery(query);
 
   return odessaStreetNames
     .map((street) => ({ street, match: normalizeStreetMatch(street) }))
-    .filter(({ match }) => match.includes(needle))
+    .filter(({ match }) => needles.some((needle) => match.includes(needle) || needle.includes(match)))
     .sort((a, b) => {
-      const aStarts = a.match.startsWith(needle) ? 0 : 1;
-      const bStarts = b.match.startsWith(needle) ? 0 : 1;
+      const primaryNeedle = needles[0] || "";
+      const aStarts = a.match.startsWith(primaryNeedle) ? 0 : 1;
+      const bStarts = b.match.startsWith(primaryNeedle) ? 0 : 1;
       return aStarts - bStarts || a.street.length - b.street.length || a.street.localeCompare(b.street, "ru");
     })
     .slice(0, limit)
-    .map(({ street }) => ({
-      label: street,
-      subtitle: "Улица Одессы",
-      query: `${street}, Одесса`,
-      source: "local-street",
-    }));
+    .map(({ street }) => {
+      const baseLabel = house ? `${street} ${house}` : street;
+      const label = formatResolvedAddressLabel(baseLabel, query);
+      return {
+        label,
+        subtitle: entrance ? `Улица Одессы · ${entrance}` : "Улица Одессы",
+        query: `${baseLabel}, Одесса`,
+        source: "local-street",
+      };
+    });
 }
 
 function formatMapboxPlace(feature) {
   const streetName = feature?.text_ru || feature?.text_uk || feature?.text || "";
   const address = feature?.address && streetName ? `${streetName} ${feature.address}` : "";
   const primary = address || feature?.place_name_ru || feature?.place_name_uk || feature?.place_name || feature?.text_ru || feature?.text_uk || feature?.text || "";
-  return primary
+  return stripPostalCodes(primary
     .replace(/, Odesa Oblast/gi, "")
     .replace(/, Odessa Oblast/gi, "")
     .replace(/, Одесская область/gi, "")
@@ -1076,7 +1129,7 @@ function formatMapboxPlace(feature) {
     .replace(/, Odessa/gi, "")
     .replace(/, Одеса/gi, "")
     .replace(/, Одесса/gi, "")
-    .trim();
+    .trim());
 }
 
 function formatSuggestionSubtitle(feature) {
@@ -1084,6 +1137,9 @@ function formatSuggestionSubtitle(feature) {
   const pieces = context
     .map((item) => item.text_ru || item.text_uk || item.text)
     .filter(Boolean)
+    .map(stripPostalCodes)
+    .filter(Boolean)
+    .filter((item) => !/^\d{5}$/.test(item))
     .filter((item) => !/ukraine|украина|україна/i.test(item))
     .filter((item, index, items) => items.findIndex((candidate) => candidate.toLowerCase() === item.toLowerCase()) === index);
   return pieces.slice(0, 3).join(", ");
@@ -1107,13 +1163,15 @@ function matchesLocalPlace(place, query) {
 }
 
 async function resolveAddressCandidate(query) {
-  const cleanQuery = normalizeSearchText(query);
+  const typedQuery = normalizeSearchText(query);
+  const { geocodeQuery } = splitAddressSearchQuery(typedQuery);
+  const cleanQuery = geocodeQuery || typedQuery;
   if (!cleanQuery) return null;
 
   const knownPlace = ODESSA_PLACES.find((place) => matchesLocalPlace(place, cleanQuery) || cleanQuery.toLowerCase().includes(place.name.toLowerCase()));
   if (knownPlace) {
     return {
-      label: knownPlace.name,
+      label: formatResolvedAddressLabel(knownPlace.name, typedQuery),
       center: knownPlace.center,
       subtitle: knownPlace.subtitle || "Одесса",
     };
@@ -1123,7 +1181,7 @@ async function resolveAddressCandidate(query) {
   if (!feature) return null;
 
   return {
-    label: formatMapboxPlace(feature),
+    label: formatResolvedAddressLabel(formatMapboxPlace(feature), typedQuery),
     center: feature.center,
     subtitle: formatSuggestionSubtitle(feature),
   };
@@ -1154,7 +1212,7 @@ function createGeocodeUrl(query, limit = 10) {
 }
 
 async function searchMapboxPlaces(query, limit = 10) {
-  const cleanQuery = normalizeSearchText(query);
+  const cleanQuery = splitAddressSearchQuery(query).geocodeQuery || normalizeSearchText(query);
   if (!cleanQuery || !MAPBOX_TOKEN) return [];
 
   const queryVariants = [
@@ -3568,7 +3626,12 @@ function bindEvents() {
     if (normalizeRouteCoordinates(center)) {
       setAddressPoint(point, center, label);
     } else {
-      await geocodeAddress(point, suggestion.dataset.query || label);
+      const result = await resolveAddressCandidate(suggestion.dataset.query || label);
+      if (result?.center) {
+        setAddressPoint(point, result.center, label);
+      } else {
+        await geocodeAddress(point, suggestion.dataset.query || label);
+      }
     }
   });
   $("#taxiScreen").addEventListener("click", (event) => {
