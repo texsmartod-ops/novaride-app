@@ -12,7 +12,7 @@
     <link rel="icon" href="/assets/novadrive-icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
     <link href="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.css" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css?v=20260629-010" />
+    <link rel="stylesheet" href="/styles.css?v=20260629-011" />
   </head>
   <body>
     <main class="app-shell">
@@ -250,6 +250,9 @@
                   <span>A</span>
                   <div class="address-field">
                     <input id="fromInput" value="Одесса, Дерибасовская 1" aria-label="Точка A" list="odessaAddressHints" autocomplete="off" />
+                    <button class="open-map-picker" type="button" data-map-point="a" aria-label="Выбрать точку A на карте">
+                      <span></span>
+                    </button>
                     <div class="address-suggestions" data-suggestions="a"></div>
                   </div>
                 </div>
@@ -259,6 +262,9 @@
                   <span>B</span>
                   <div class="address-field">
                     <input id="toInput" value="Аркадия, Гагаринское плато" aria-label="Точка B" list="odessaAddressHints" autocomplete="off" />
+                    <button class="open-map-picker" type="button" data-map-point="b" aria-label="Выбрать точку B на карте">
+                      <span></span>
+                    </button>
                     <div class="address-suggestions" data-suggestions="b"></div>
                   </div>
                 </div>
@@ -324,8 +330,23 @@
       </section>
     </main>
 
+    <section class="map-picker-overlay is-hidden" id="mapPickerOverlay" aria-hidden="true">
+      <div class="map-picker-topbar">
+        <button class="map-picker-close" id="mapPickerClose" type="button" aria-label="Назад">‹</button>
+        <div>
+          <span id="mapPickerTitle">Выберите точку</span>
+          <strong id="mapPickerAddress">Одесса</strong>
+        </div>
+      </div>
+      <div class="map-picker-canvas" id="mapPickerCanvas"></div>
+      <div class="map-picker-pin" aria-hidden="true">
+        <strong></strong>
+      </div>
+      <button class="map-picker-done" id="mapPickerDone" type="button">Готово</button>
+    </section>
+
     <script src="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.js"></script>
-    <script src="/app.js?v=20260629-010"></script>
+    <script src="/app.js?v=20260629-011"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {

@@ -45,6 +45,11 @@ const ODESSA_CENTER = [30.7233, 46.4825];
 const ODESSA_SEARCH_BBOX = [30.25, 46.28, 31.05, 46.72];
 const ODESSA_GEOCODE_TYPES = "address,poi,neighborhood,locality,place,district";
 let novaMap;
+let pickerMap;
+let pickerPoint = "a";
+let pickerCenter = null;
+let pickerAddress = "";
+let pickerMoveTimer;
 let activeMapPoint = "a";
 let pickupMarker;
 let destinationMarker;
@@ -1333,20 +1338,24 @@ async function searchMapboxPlaces(query, limit = 10) {
     .slice(0, limit);
 }
 
-function localizeMapLabels() {
-  if (!novaMap?.getStyle()) return;
+function localizeMapLabelsFor(mapInstance) {
+  if (!mapInstance?.getStyle()) return;
   const languageKey = state.language === "uk" ? "name_uk" : "name_ru";
 
-  novaMap.getStyle().layers.forEach((layer) => {
+  mapInstance.getStyle().layers.forEach((layer) => {
     if (layer.id?.startsWith("nova-")) return;
     if (layer.type === "symbol" && layer.layout?.["text-field"]) {
       try {
-        novaMap.setLayoutProperty(layer.id, "text-field", ["coalesce", ["get", languageKey], ["get", "name_ru"], ["get", "name_uk"], ["get", "name"]]);
+        mapInstance.setLayoutProperty(layer.id, "text-field", ["coalesce", ["get", languageKey], ["get", "name_ru"], ["get", "name_uk"], ["get", "name"]]);
       } catch {
         // Some Mapbox internal layers do not allow runtime text changes.
       }
     }
   });
+}
+
+function localizeMapLabels() {
+  localizeMapLabelsFor(novaMap);
 }
 
 function installRouteLayer() {
@@ -1577,6 +1586,108 @@ async function reverseGeocodePoint(point, coordinates) {
   }
 }
 
+function getCurrentMapStyle() {
+  return document.body.classList.contains("dark") ? "mapbox://styles/mapbox/navigation-night-v1" : "mapbox://styles/mapbox/streets-v12";
+}
+
+function getMapPickerStartPoint(point) {
+  if (point === "b") return normalizeRouteCoordinates(mapPoints.b) || ODESSA_CENTER;
+  return normalizeRouteCoordinates(mapPoints.a) || ODESSA_CENTER;
+}
+
+function setMapPickerText(text) {
+  const target = $("#mapPickerAddress");
+  if (target) target.textContent = text;
+}
+
+function schedulePickerReverseGeocode() {
+  window.clearTimeout(pickerMoveTimer);
+  setMapPickerText("Определяем адрес...");
+  pickerMoveTimer = window.setTimeout(updatePickerAddress, 260);
+}
+
+async function updatePickerAddress() {
+  if (!pickerMap) return;
+  const center = pickerMap.getCenter();
+  pickerCenter = normalizeRouteCoordinates([center.lng, center.lat]) || [center.lng, center.lat];
+
+  try {
+    const response = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${pickerCenter.join(",")}.json?limit=1&language=${getMapLanguage()}&types=address,poi,place,locality,neighborhood&access_token=${MAPBOX_TOKEN}`,
+    );
+    const data = await response.json();
+    pickerAddress = formatMapboxPlace(data.features?.[0]) || `Точка на карте: ${pickerCenter[1].toFixed(5)}, ${pickerCenter[0].toFixed(5)}`;
+  } catch {
+    pickerAddress = `Точка на карте: ${pickerCenter[1].toFixed(5)}, ${pickerCenter[0].toFixed(5)}`;
+  }
+
+  setMapPickerText(pickerAddress);
+}
+
+function openMapPicker(point) {
+  if (!window.mapboxgl || !MAPBOX_TOKEN) {
+    alert("Карта еще загружается. Попробуйте через пару секунд.");
+    return;
+  }
+
+  pickerPoint = point === "b" ? "b" : "a";
+  pickerCenter = getMapPickerStartPoint(pickerPoint);
+  pickerAddress = "";
+
+  $("#mapPickerTitle").textContent = pickerPoint === "a" ? "Точка посадки" : "Куда едем";
+  setMapPickerText("Определяем адрес...");
+  $("#mapPickerOverlay").classList.remove("is-hidden");
+  $("#mapPickerOverlay").setAttribute("aria-hidden", "false");
+  document.body.classList.add("map-picker-open");
+  mapboxgl.accessToken = MAPBOX_TOKEN;
+
+  window.setTimeout(() => {
+    if (!pickerMap) {
+      pickerMap = new mapboxgl.Map({
+        container: "mapPickerCanvas",
+        style: getCurrentMapStyle(),
+        center: pickerCenter,
+        zoom: 16,
+        pitch: 0,
+        bearing: 0,
+        attributionControl: false,
+      });
+      pickerMap.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
+      pickerMap.on("load", () => {
+        localizeMapLabelsFor(pickerMap);
+        updatePickerAddress();
+      });
+      pickerMap.on("move", schedulePickerReverseGeocode);
+      pickerMap.on("moveend", updatePickerAddress);
+    } else {
+      pickerMap.resize();
+      if (pickerMap.getStyle()?.sprite) {
+        pickerMap.jumpTo({ center: pickerCenter, zoom: Math.max(pickerMap.getZoom(), 16), pitch: 0, bearing: 0 });
+      }
+      updatePickerAddress();
+    }
+  }, 80);
+}
+
+function closeMapPicker() {
+  $("#mapPickerOverlay")?.classList.add("is-hidden");
+  $("#mapPickerOverlay")?.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("map-picker-open");
+}
+
+function confirmMapPicker() {
+  if (!pickerMap) return;
+  const center = pickerMap.getCenter();
+  const safeCenter = normalizeRouteCoordinates([center.lng, center.lat]);
+  if (!safeCenter) {
+    alert("Выберите точку в Одессе.");
+    return;
+  }
+
+  setAddressPoint(pickerPoint, safeCenter, pickerAddress || `Точка на карте: ${safeCenter[1].toFixed(5)}, ${safeCenter[0].toFixed(5)}`);
+  closeMapPicker();
+}
+
 function setAddressPoint(point, coordinates, label) {
   const stopIndex = getStopIndex(point);
 
@@ -1770,7 +1881,7 @@ function playScreenTransition(callback) {
 function applyTheme(theme) {
   document.body.classList.toggle("dark", theme === "dark");
   if (novaMap) {
-    novaMap.setStyle(theme === "dark" ? "mapbox://styles/mapbox/navigation-night-v1" : "mapbox://styles/mapbox/streets-v12");
+    novaMap.setStyle(getCurrentMapStyle());
     novaMap.once("style.load", () => {
       localizeMapLabels();
       installRouteLayer();
@@ -1779,6 +1890,13 @@ function applyTheme(theme) {
       renderRoutePointMarkers();
       renderStopMarkers();
       updateRouteLine();
+    });
+  }
+  if (pickerMap) {
+    pickerMap.setStyle(getCurrentMapStyle());
+    pickerMap.once("style.load", () => {
+      localizeMapLabelsFor(pickerMap);
+      updatePickerAddress();
     });
   }
   playScreenTransition(() => {
@@ -3658,7 +3776,7 @@ function initMapboxMap() {
   try {
     novaMap = new mapboxgl.Map({
       container: "realMap",
-      style: document.body.classList.contains("dark") ? "mapbox://styles/mapbox/navigation-night-v1" : "mapbox://styles/mapbox/streets-v12",
+      style: getCurrentMapStyle(),
       center: ODESSA_CENTER,
       zoom: 13,
       pitch: 34,
@@ -3706,6 +3824,21 @@ function bindEvents() {
   $("#authForm").addEventListener("submit", finishAuth);
   $("#clientPriceInput")?.addEventListener("input", syncClientRidePrice);
   bindAddressSearch();
+  $("#ridePanel").addEventListener("click", (event) => {
+    const pickerButton = event.target.closest(".open-map-picker");
+    if (!pickerButton) return;
+
+    event.preventDefault();
+    hideAddressSuggestions(pickerButton.dataset.mapPoint);
+    openMapPicker(pickerButton.dataset.mapPoint);
+  });
+  $("#mapPickerClose")?.addEventListener("click", closeMapPicker);
+  $("#mapPickerDone")?.addEventListener("click", confirmMapPicker);
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("#mapPickerOverlay")?.classList.contains("is-hidden")) {
+      closeMapPicker();
+    }
+  });
   $("#ridePanel").addEventListener("pointerdown", async (event) => {
     const suggestion = event.target.closest(".address-suggestions button");
     if (!suggestion) return;

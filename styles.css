@@ -32,6 +32,10 @@ body.has-offer-overlay {
   overflow: hidden;
 }
 
+body.map-picker-open {
+  overflow: hidden;
+}
+
 button,
 input {
   font: inherit;
@@ -1969,8 +1973,62 @@ body.dark .verification-step-header {
 
 .route-point input {
   min-height: 44px;
+  padding-right: 54px;
   border-color: rgba(29, 103, 255, 0.16);
   background: rgba(255, 255, 255, 0.9);
+}
+
+.open-map-picker {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(29, 103, 255, 0.18);
+  border-radius: 8px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(232, 242, 255, 0.96));
+  box-shadow: 0 10px 22px rgba(29, 103, 255, 0.12);
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.open-map-picker span {
+  position: relative;
+  width: 17px;
+  height: 17px;
+  border: 2px solid var(--blue);
+  border-radius: 5px;
+}
+
+.open-map-picker span::before,
+.open-map-picker span::after {
+  content: "";
+  position: absolute;
+}
+
+.open-map-picker span::before {
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, var(--blue), var(--cyan));
+  transform: translate(-50%, -50%);
+}
+
+.open-map-picker span::after {
+  left: 50%;
+  bottom: -8px;
+  border: 5px solid transparent;
+  border-top-color: var(--blue);
+  transform: translateX(-50%);
+}
+
+.open-map-picker:hover {
+  border-color: rgba(29, 103, 255, 0.42);
+  box-shadow: 0 12px 24px rgba(29, 103, 255, 0.22);
 }
 
 .address-suggestions {
@@ -1987,6 +2045,140 @@ body.dark .verification-step-header {
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 18px 38px rgba(7, 23, 47, 0.16);
   backdrop-filter: blur(16px);
+}
+
+.map-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: #07172f;
+  color: #fff;
+}
+
+.map-picker-overlay.is-hidden {
+  display: none;
+}
+
+.map-picker-topbar {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  left: 14px;
+  right: 14px;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.map-picker-close {
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(7, 23, 47, 0.86);
+  color: #fff;
+  font-size: 2.3rem;
+  line-height: 1;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+}
+
+.map-picker-topbar div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--midnight);
+  box-shadow: 0 18px 44px rgba(7, 23, 47, 0.22);
+  backdrop-filter: blur(16px);
+}
+
+.map-picker-topbar span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.map-picker-topbar strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(1rem, 2.4vw, 1.25rem);
+}
+
+.map-picker-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.map-picker-pin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: rgba(53, 212, 255, 0.24);
+  box-shadow: 0 0 0 16px rgba(53, 212, 255, 0.1);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.map-picker-pin strong {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 42px;
+  height: 42px;
+  border: 4px solid #fff;
+  border-radius: 12px;
+  background: var(--midnight);
+  box-shadow: 0 14px 28px rgba(7, 23, 47, 0.34);
+  transform: translate(-50%, -50%);
+}
+
+.map-picker-pin strong::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  transform: translate(-50%, -50%);
+}
+
+.map-picker-pin strong::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -14px;
+  border: 10px solid transparent;
+  border-top-color: var(--midnight);
+  transform: translateX(-50%);
+}
+
+.map-picker-done {
+  position: absolute;
+  left: max(14px, env(safe-area-inset-left));
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 3;
+  min-height: 62px;
+  border: 0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #b9ff16, #78ee22);
+  color: #07172f;
+  font-size: clamp(1.2rem, 4vw, 1.6rem);
+  font-weight: 1000;
+  box-shadow: 0 20px 42px rgba(7, 23, 47, 0.28);
 }
 
 .address-suggestions.is-open {
