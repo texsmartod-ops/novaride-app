@@ -1629,6 +1629,7 @@ function showSection(section) {
   clearInterval(driverChatTimer);
   driverChatTimer = null;
   $(".workspace").classList.remove("driver-order-view");
+  $(".workspace").classList.toggle("view-addresses", section === "addresses" && !state.driverMode);
   $("#driverPanel").classList.remove("order-detail-mode");
   state.currentSection = section;
   const isDriverFeed = state.driverMode && section === "ride";
@@ -1844,7 +1845,7 @@ async function showDriverVerificationGate() {
   updateMenuForRole();
   clearInterval(driverOrdersTimer);
   clearInterval(driverAcceptedTimer);
-  $(".workspace").classList.remove("driver-order-view");
+  $(".workspace").classList.remove("driver-order-view", "view-addresses");
   $(".content-grid").classList.add("section-mode");
   $(".map-panel").classList.add("is-hidden");
   $("#ridePanel").classList.add("is-hidden");
@@ -2570,7 +2571,7 @@ function showDriverContent(tabName) {
   }
   clearInterval(driverOrdersTimer);
   clearInterval(driverAcceptedTimer);
-  $(".workspace").classList.remove("driver-order-view");
+  $(".workspace").classList.remove("driver-order-view", "view-addresses");
   $("#driverPanel").classList.remove("order-detail-mode");
   $(".content-grid").classList.add("section-mode");
   $(".map-panel").classList.add("is-hidden");

@@ -2538,18 +2538,21 @@ body.dark .verification-step-header {
   position: relative;
 }
 
+.address-grid {
+  grid-template-columns: 1fr;
+}
+
 .address-card {
-  grid-template-columns: 54px minmax(0, 1fr);
-  align-items: start;
-  gap: 12px 14px;
-  min-height: 116px;
+  grid-template-columns: 54px minmax(0, 1fr) minmax(132px, auto);
+  align-items: center;
+  gap: 12px 16px;
+  min-height: 96px;
   overflow: visible;
   border-color: rgba(29, 103, 255, 0.12);
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.94));
 }
 
 .address-card .address-icon {
-  grid-row: span 2;
   width: 48px;
   height: 48px;
   border-radius: 50%;
@@ -2590,21 +2593,30 @@ body.dark .verification-step-header {
   gap: 5px;
 }
 
-.address-copy strong,
-.address-copy span {
+.address-copy strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.address-copy span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .address-card .mini-action {
-  grid-column: 2;
-  justify-self: start;
+  grid-column: 3;
+  justify-self: end;
   min-width: 132px;
   min-height: 38px;
 }
 
 .address-card::before {
+  display: none;
+}
+
+.workspace.view-addresses .ride-companion {
   display: none;
 }
 
