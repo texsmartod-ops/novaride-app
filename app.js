@@ -2078,6 +2078,51 @@ function renderMapButton(order, target = "pickup") {
   return `<a class="round-contact maps-contact" href="https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving" target="_blank" rel="noopener"><span class="map-mini-icon"></span>${label}</a>`;
 }
 
+function getRideStage(order) {
+  if (order?.status === "completed") return "completed";
+  if (order?.status !== "accepted") return order?.status || "open";
+  if (!order.rideStage || order.rideStage === "searching") return "driving_to_pickup";
+  return order.rideStage || "driving_to_pickup";
+}
+
+function getPassengerStageTitle(order) {
+  const stage = getRideStage(order);
+  if (stage === "arrived") return "Водитель на месте";
+  if (stage === "in_progress") return "Поездка началась";
+  return "Водитель едет к вам";
+}
+
+function getDriverStageText(order) {
+  const stage = getRideStage(order);
+  if (stage === "arrived") return "Вы на месте · ожидаем пассажира";
+  if (stage === "in_progress") return "Поездка началась · едем к точке B";
+  return "Едем к точке A";
+}
+
+function renderDriverStageActions(order) {
+  const stage = getRideStage(order);
+  const orderId = escapeHtml(order.id);
+
+  if (stage === "arrived") {
+    return `
+      <button class="primary-action update-ride-stage" data-order="${orderId}" data-stage="in_progress" type="button">Начать поездку</button>
+      ${renderMapButton(order, "pickup")}
+    `;
+  }
+
+  if (stage === "in_progress") {
+    return `
+      ${renderMapButton(order, "destination")}
+      <button class="primary-action complete-order" data-order="${orderId}" type="button">Поездка завершена</button>
+    `;
+  }
+
+  return `
+    ${renderMapButton(order, "pickup")}
+    <button class="primary-action update-ride-stage" data-order="${orderId}" data-stage="arrived" type="button">На месте</button>
+  `;
+}
+
 function renderOrderStops(order) {
   const stops = order?.stops || [];
   if (!stops.length) return "";
@@ -2592,11 +2637,11 @@ function showDriverAcceptedOrder(order, options = {}) {
               <div class="client-avatar">${escapeHtml((order.passengerName || "К").slice(0, 1).toUpperCase())}</div>
               <div>
                 <strong>${escapeHtml(order.passengerName || "Клиент")}</strong>
-                <span>Едем к точке A · рейтинг ${escapeHtml(order.passengerRating || 5)}</span>
+                <span>${escapeHtml(getDriverStageText(order))} · рейтинг ${escapeHtml(order.passengerRating || 5)}</span>
               </div>
             </div>
             ${renderContactButtons(order.passengerPhone || "+380", "client-")}
-            ${renderMapButton(order)}
+            <div class="driver-stage-actions">${renderDriverStageActions(order)}</div>
           `
           : `
             <div class="driver-private-note">
@@ -2611,7 +2656,6 @@ function showDriverAcceptedOrder(order, options = {}) {
         ${renderOrderStops(order)}
       </div>
       ${order.status === "accepted" ? renderRideChat(order, "driver") : ""}
-      ${order.status === "accepted" ? `<button class="primary-action complete-order" data-order="${escapeHtml(order.id)}" type="button">Завершить поездку</button>` : ""}
       <button class="ghost-action cancel-order" data-order="${escapeHtml(order.id)}" data-sender="driver" type="button">Отменить заказ</button>
     </div>
   `;
@@ -2679,6 +2723,7 @@ function renderPassengerActiveOrder(order) {
   const progress = Math.max(0, Math.min(100, ((Number(order.secondsLeft || 0) / ORDER_SEARCH_SECONDS) * 100).toFixed(2)));
   panel.style.setProperty("--order-progress", `${progress}%`);
   panel.className = `active-order-panel ${order.status === "completed" ? "ride-completed" : order.status === "accepted" ? "ride-confirmed" : ["expired", "canceled"].includes(order.status) ? "ride-expired" : "offer-toast"}`;
+  panel.dataset.rideStage = getRideStage(order);
   $(".workspace")?.classList.toggle("passenger-active-ride", order.status === "accepted");
   const isOfferOverlay = order.status === "open";
   const panelHost = isOfferOverlay ? $("#taxiScreen") : $("#ridePanel");
@@ -2712,8 +2757,14 @@ function renderPassengerActiveOrder(order) {
 
   if (order.status === "accepted" && order.driver) {
     const driver = order.driver;
+    const stage = getRideStage(order);
+    const liveText = stage === "arrived"
+      ? "Водитель ждет вас у точки посадки"
+      : stage === "in_progress"
+        ? "Вы в поездке · едем к точке B"
+        : "Таксист движется к точке A";
     panel.innerHTML = `
-      <div class="accepted-badge">Водитель едет к вам</div>
+      <div class="accepted-badge">${escapeHtml(getPassengerStageTitle(order))}</div>
       <div class="client-profile-row driver-profile-row">
         <div class="client-avatar">${escapeHtml(driver.avatar || driver.name.slice(0, 1).toUpperCase())}</div>
         <div>
@@ -2722,7 +2773,7 @@ function renderPassengerActiveOrder(order) {
         </div>
       </div>
       ${renderContactButtons(driver.phone || "+380", "driver-")}
-      <div class="driver-live-line"><span></span><strong>Таксист движется по маршруту</strong></div>
+      <div class="driver-live-line"><span></span><strong>${escapeHtml(liveText)}</strong></div>
       ${renderRideChat(order, "passenger")}
       <button class="ghost-action cancel-order" data-order="${escapeHtml(order.id)}" data-sender="passenger" type="button">Отменить заказ</button>
     `;
@@ -2901,6 +2952,28 @@ async function completeRideOrder(orderId) {
   }
 }
 
+async function updateRideStage(orderId, stage) {
+  const button = document.querySelector(`.update-ride-stage[data-order="${CSS.escape(orderId)}"][data-stage="${CSS.escape(stage)}"]`);
+  const loadingText = stage === "arrived" ? "Отмечаем..." : "Начинаем...";
+  if (button) setButtonLoading(button, true, loadingText);
+
+  try {
+    const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}/stage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Не удалось обновить этап поездки.");
+
+    showDriverAcceptedOrder(data.order, { syncMap: false, poll: true });
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    if (button) setButtonLoading(button, false);
+  }
+}
+
 async function rateRideOrder(orderId, role, rating) {
   const button = document.querySelector(`[data-rate-order="${CSS.escape(orderId)}"][data-rate-role="${CSS.escape(role)}"][data-rate-value="${CSS.escape(String(rating))}"]`);
   if (button) setButtonLoading(button, true, "★");
@@ -2931,7 +3004,8 @@ async function pollActiveOrder(orderId) {
     const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error || "Заказ не найден.");
-    if (data.order.status === "accepted" && isRideChatFocused(orderId)) {
+    const currentStage = $("#activeOrderPanel")?.dataset.rideStage || "";
+    if (data.order.status === "accepted" && isRideChatFocused(orderId) && getRideStage(data.order) === currentStage) {
       return;
     }
     renderPassengerActiveOrder(data.order);
@@ -3410,6 +3484,12 @@ function bindEvents() {
     const completeButton = event.target.closest(".complete-order");
     if (completeButton) {
       completeRideOrder(completeButton.dataset.order);
+      return;
+    }
+
+    const stageButton = event.target.closest(".update-ride-stage");
+    if (stageButton) {
+      updateRideStage(stageButton.dataset.order, stageButton.dataset.stage);
       return;
     }
 

@@ -197,6 +197,7 @@ async function ensurePostgres() {
         distance_km NUMERIC DEFAULT 0,
         comment TEXT DEFAULT '',
         status TEXT NOT NULL DEFAULT 'open',
+        ride_stage TEXT DEFAULT 'searching',
         stops JSONB DEFAULT '[]'::jsonb,
         offers JSONB DEFAULT '[]'::jsonb,
         messages JSONB DEFAULT '[]'::jsonb,
@@ -238,6 +239,7 @@ async function ensurePostgres() {
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS stops JSONB DEFAULT '[]'::jsonb;
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS offers JSONB DEFAULT '[]'::jsonb;
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS messages JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS ride_stage TEXT DEFAULT 'searching';
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_phone TEXT DEFAULT '';
       ALTER TABLE ride_orders ADD COLUMN IF NOT EXISTS driver_rating NUMERIC DEFAULT 4.86;
@@ -430,6 +432,9 @@ function publicDriverChatMessage(message) {
 
 function orderFromRow(row) {
   if (!row) return null;
+  const rideStage = row.status === "accepted" && (!row.ride_stage || row.ride_stage === "searching")
+    ? "driving_to_pickup"
+    : row.ride_stage || row.status;
 
   return {
     id: row.id,
@@ -446,6 +451,7 @@ function orderFromRow(row) {
     distanceKm: Number(row.distance_km || 0),
     comment: row.comment || "",
     status: row.status,
+    rideStage,
     stops: Array.isArray(row.stops) ? row.stops : [],
     offers: Array.isArray(row.offers) ? row.offers : [],
     messages: Array.isArray(row.messages) ? row.messages : [],
@@ -471,6 +477,9 @@ function orderFromRow(row) {
 
 function publicOrder(order) {
   if (!order) return null;
+  const rideStage = order.status === "accepted" && (!order.rideStage || order.rideStage === "searching")
+    ? "driving_to_pickup"
+    : order.rideStage || order.status;
 
   return {
     id: order.id,
@@ -486,6 +495,7 @@ function publicOrder(order) {
     distanceKm: order.distanceKm,
     comment: order.comment || "",
     status: order.status,
+    rideStage,
     stops: order.stops || [],
     offers: order.offers || [],
     messages: order.messages || [],
@@ -1188,6 +1198,7 @@ async function acceptRideOffer(orderId, offerId) {
       `
         UPDATE ride_orders SET
           status = 'accepted',
+          ride_stage = 'driving_to_pickup',
           price = $2,
           driver_name = $3,
           driver_phone = $4,
@@ -1212,6 +1223,7 @@ async function acceptRideOffer(orderId, offerId) {
   orders[index] = {
     ...orders[index],
     status: "accepted",
+    rideStage: "driving_to_pickup",
     price: offer.price,
     driver,
     acceptedAt: now,
@@ -1373,7 +1385,7 @@ async function cancelRideOrder(orderId, payload = {}) {
   const pool = await ensurePostgres();
   if (pool) {
     const result = await pool.query(
-      "UPDATE ride_orders SET status = 'canceled', messages = $2::jsonb WHERE id = $1 AND status IN ('open', 'accepted') RETURNING *",
+      "UPDATE ride_orders SET status = 'canceled', ride_stage = 'canceled', messages = $2::jsonb WHERE id = $1 AND status IN ('open', 'accepted') RETURNING *",
       [order.id, JSON.stringify(messages)],
     );
     await pool.query(
@@ -1391,6 +1403,85 @@ async function cancelRideOrder(orderId, payload = {}) {
   orders[index] = {
     ...orders[index],
     status: "canceled",
+    rideStage: "canceled",
+    messages,
+  };
+  writeOrders(orders);
+  return orders[index];
+}
+
+const rideStageMessages = {
+  arrived: "Водитель на месте.",
+  in_progress: "Поездка началась.",
+};
+
+function normalizeRideStage(stage) {
+  return ["driving_to_pickup", "arrived", "in_progress"].includes(stage) ? stage : "";
+}
+
+async function updateRideStage(orderId, payload = {}) {
+  const order = await findRideOrderById(orderId);
+  if (!order) {
+    throw new Error("Заказ не найден.");
+  }
+
+  if (order.status !== "accepted") {
+    throw new Error("Этап можно менять только у подтвержденной поездки.");
+  }
+
+  const nextStage = normalizeRideStage(payload.stage);
+  if (!nextStage) {
+    throw new Error("Неизвестный этап поездки.");
+  }
+
+  const currentStage = !order.rideStage || order.rideStage === "searching" ? "driving_to_pickup" : order.rideStage;
+  const allowedNext = {
+    driving_to_pickup: ["arrived"],
+    arrived: ["in_progress"],
+    in_progress: [],
+  };
+
+  if (nextStage !== currentStage && !allowedNext[currentStage]?.includes(nextStage)) {
+    throw new Error("Этот этап поездки сейчас недоступен.");
+  }
+
+  const now = new Date().toISOString();
+  const stageMessage = rideStageMessages[nextStage];
+  const message = stageMessage && nextStage !== currentStage
+    ? {
+        id: createId(),
+        sender: "system",
+        name: "NovaRide",
+        text: stageMessage,
+        createdAt: now,
+      }
+    : null;
+  const messages = message ? [...(order.messages || []), message].slice(-80) : order.messages || [];
+
+  const pool = await ensurePostgres();
+  if (pool) {
+    const result = await pool.query(
+      "UPDATE ride_orders SET ride_stage = $2, messages = $3::jsonb WHERE id = $1 AND status = 'accepted' RETURNING *",
+      [order.id, nextStage, JSON.stringify(messages)],
+    );
+    if (message) {
+      await pool.query(
+        "INSERT INTO ride_messages (id, order_id, sender, sender_name, message_text, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
+        [message.id, order.id, message.sender, message.name, message.text, message.createdAt],
+      );
+    }
+    return orderFromRow(result.rows[0]);
+  }
+
+  const orders = readOrders();
+  const index = orders.findIndex((item) => item.id === order.id);
+  if (index < 0 || orders[index].status !== "accepted") {
+    throw new Error("Этап можно менять только у подтвержденной поездки.");
+  }
+
+  orders[index] = {
+    ...orders[index],
+    rideStage: nextStage,
     messages,
   };
   writeOrders(orders);
@@ -1425,7 +1516,7 @@ async function completeRideOrder(orderId, payload = {}) {
   const pool = await ensurePostgres();
   if (pool) {
     const result = await pool.query(
-      "UPDATE ride_orders SET status = 'completed', completed_at = $2, messages = $3::jsonb WHERE id = $1 AND status = 'accepted' RETURNING *",
+      "UPDATE ride_orders SET status = 'completed', ride_stage = 'completed', completed_at = $2, messages = $3::jsonb WHERE id = $1 AND status = 'accepted' RETURNING *",
       [order.id, now, JSON.stringify(messages)],
     );
     await pool.query(
@@ -1443,6 +1534,7 @@ async function completeRideOrder(orderId, payload = {}) {
   orders[index] = {
     ...orders[index],
     status: "completed",
+    rideStage: "completed",
     completedAt: now,
     messages,
   };
@@ -2556,6 +2648,16 @@ async function handleCompleteRideOrder(req, res, orderId) {
   }
 }
 
+async function handleRideStage(req, res, orderId) {
+  try {
+    const body = await readJson(req);
+    const order = await updateRideStage(orderId, body);
+    sendJson(res, 200, { ok: true, order: publicOrder(order) });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: error.message || "Не удалось обновить этап поездки." });
+  }
+}
+
 async function handleRateRideOrder(req, res, orderId) {
   try {
     const body = await readJson(req);
@@ -2752,6 +2854,12 @@ const server = http.createServer((req, res) => {
   const orderCompleteMatch = req.url.match(/^\/api\/orders\/([^/]+)\/complete$/);
   if (req.method === "POST" && orderCompleteMatch) {
     handleCompleteRideOrder(req, res, decodeURIComponent(orderCompleteMatch[1]));
+    return;
+  }
+
+  const orderStageMatch = req.url.match(/^\/api\/orders\/([^/]+)\/stage$/);
+  if (req.method === "POST" && orderStageMatch) {
+    handleRideStage(req, res, decodeURIComponent(orderStageMatch[1]));
     return;
   }
 

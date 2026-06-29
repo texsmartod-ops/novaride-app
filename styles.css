@@ -3440,6 +3440,18 @@ body.dark .verification-step-header {
   gap: 10px;
 }
 
+.driver-stage-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.driver-stage-actions .round-contact,
+.driver-stage-actions .primary-action {
+  width: 100%;
+  justify-content: center;
+}
+
 .round-contact {
   min-height: 46px;
   border: 1px solid rgba(29, 103, 255, 0.18);
