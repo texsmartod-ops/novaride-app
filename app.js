@@ -927,6 +927,44 @@ function setRouteGeoJson(coordinates) {
   });
 }
 
+function getRoutePointFeatures() {
+  return [
+    { label: "A", role: "pickup", color: "#1d67ff", halo: "rgba(29, 103, 255, 0.18)", coordinates: normalizeRouteCoordinates(mapPoints.a) },
+    { label: "B", role: "destination", color: "#9b4dff", halo: "rgba(155, 77, 255, 0.18)", coordinates: normalizeRouteCoordinates(mapPoints.b) },
+  ]
+    .filter((point) => point.coordinates)
+    .map((point) => ({
+      type: "Feature",
+      properties: {
+        label: point.label,
+        role: point.role,
+        color: point.color,
+        halo: point.halo,
+      },
+      geometry: {
+        type: "Point",
+        coordinates: point.coordinates,
+      },
+    }));
+}
+
+function renderRoutePointMarkers() {
+  if (!novaMap) return;
+
+  if (!novaMap.getSource("nova-route-points")) {
+    try {
+      installRoutePointLayer();
+    } catch {
+      return;
+    }
+  }
+
+  novaMap.getSource("nova-route-points").setData({
+    type: "FeatureCollection",
+    features: getRoutePointFeatures(),
+  });
+}
+
 function clearStopMarkers() {
   stopMarkers.forEach((marker) => marker.remove());
   stopMarkers = [];
@@ -1105,6 +1143,7 @@ function localizeMapLabels() {
   const languageKey = state.language === "uk" ? "name_uk" : "name_ru";
 
   novaMap.getStyle().layers.forEach((layer) => {
+    if (layer.id?.startsWith("nova-")) return;
     if (layer.type === "symbol" && layer.layout?.["text-field"]) {
       try {
         novaMap.setLayoutProperty(layer.id, "text-field", ["coalesce", ["get", languageKey], ["get", "name_ru"], ["get", "name_uk"], ["get", "name"]]);
@@ -1149,6 +1188,57 @@ function installRouteLayer() {
       "line-color": "#1d67ff",
       "line-width": 4,
       "line-opacity": 0.94,
+    },
+  });
+}
+
+function installRoutePointLayer() {
+  if (!novaMap || novaMap.getSource("nova-route-points")) return;
+
+  novaMap.addSource("nova-route-points", {
+    type: "geojson",
+    data: {
+      type: "FeatureCollection",
+      features: getRoutePointFeatures(),
+    },
+  });
+
+  novaMap.addLayer({
+    id: "nova-route-points-halo",
+    type: "circle",
+    source: "nova-route-points",
+    paint: {
+      "circle-radius": 24,
+      "circle-color": ["get", "halo"],
+      "circle-blur": 0.08,
+    },
+  });
+
+  novaMap.addLayer({
+    id: "nova-route-points-dot",
+    type: "circle",
+    source: "nova-route-points",
+    paint: {
+      "circle-radius": 18,
+      "circle-color": ["get", "color"],
+      "circle-stroke-color": "#ffffff",
+      "circle-stroke-width": 4,
+    },
+  });
+
+  novaMap.addLayer({
+    id: "nova-route-points-label",
+    type: "symbol",
+    source: "nova-route-points",
+    layout: {
+      "text-field": ["get", "label"],
+      "text-size": 17,
+      "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
+    },
+    paint: {
+      "text-color": "#ffffff",
     },
   });
 }
@@ -1316,6 +1406,7 @@ function setAddressPoint(point, coordinates, label) {
   const marker = point === "a" ? pickupMarker : destinationMarker;
   const input = point === "a" ? $("#fromInput") : $("#toInput");
   marker?.setLngLat(safeCoordinates);
+  renderRoutePointMarkers();
   input.value = label;
   input.dataset.selectedLabel = label;
   hideAddressSuggestions(point);
@@ -2558,10 +2649,13 @@ function applyOrderToMap(order) {
   renderStopsList();
   pickupMarker?.setLngLat(order.a);
   destinationMarker?.setLngLat(order.b);
+  renderRoutePointMarkers();
   renderStopMarkers();
   window.setTimeout(() => {
     initMapboxMap();
     novaMap?.resize();
+    renderRoutePointMarkers();
+    renderStopMarkers();
     if (routeKey !== lastRouteKey) {
       lastRouteKey = routeKey;
       updateRouteLine();
@@ -3314,6 +3408,7 @@ function createUserLocationMarker() {
 function setPickupToUserLocation(coordinates) {
   mapPoints.a = coordinates;
   pickupMarker?.setLngLat(coordinates);
+  renderRoutePointMarkers();
 
   activeMapPoint = "b";
   reverseGeocodePoint("a", coordinates);
@@ -3359,17 +3454,14 @@ function initMapboxMap() {
 
     novaMap.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
 
-    pickupMarker = new mapboxgl.Marker({ element: createMapMarker("A", "pickup"), draggable: false, anchor: "center" }).setLngLat(mapPoints.a).addTo(novaMap);
-    destinationMarker = new mapboxgl.Marker({ element: createMapMarker("B", "destination"), draggable: false, anchor: "center" })
-      .setLngLat(mapPoints.b)
-      .addTo(novaMap);
-
     novaMap.on("load", () => {
       $("#mapCanvas").classList.add("has-real-map");
       $("#mapCanvas").classList.remove("loading-real-map");
       localizeMapLabels();
       installRouteLayer();
+      installRoutePointLayer();
       installStopLayer();
+      renderRoutePointMarkers();
       renderStopMarkers();
 
       updateRouteLine();
