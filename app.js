@@ -66,6 +66,8 @@ let driverCarMarker;
 let lastRouteKey = "";
 let rideChatActiveUntil = 0;
 const sendingRideMessages = new Set();
+let odessaStreetNames = [];
+let odessaStreetsPromise;
 
 const ODESSA_PLACES = [
   { name: "Дерибасовская 1", subtitle: "Центр Одессы", aliases: ["дерибасовская"], center: [30.7355, 46.4846] },
@@ -1013,6 +1015,51 @@ function normalizeSearchText(value) {
     .replace(/\s+/g, " ");
 }
 
+function normalizeStreetMatch(value) {
+  return normalizeSearchText(value)
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[«»"'.,()]/g, " ");
+}
+
+async function loadOdessaStreets() {
+  if (odessaStreetsPromise) return odessaStreetsPromise;
+
+  odessaStreetsPromise = fetch("/assets/odessa-streets.json")
+    .then((response) => (response.ok ? response.json() : []))
+    .then((streets) => {
+      odessaStreetNames = Array.isArray(streets) ? streets.filter(Boolean) : [];
+      return odessaStreetNames;
+    })
+    .catch(() => {
+      odessaStreetNames = [];
+      return odessaStreetNames;
+    });
+
+  return odessaStreetsPromise;
+}
+
+function getLocalStreetSuggestions(query, limit = 8) {
+  const needle = normalizeStreetMatch(query);
+  if (needle.length < 2 || !odessaStreetNames.length) return [];
+
+  return odessaStreetNames
+    .map((street) => ({ street, match: normalizeStreetMatch(street) }))
+    .filter(({ match }) => match.includes(needle))
+    .sort((a, b) => {
+      const aStarts = a.match.startsWith(needle) ? 0 : 1;
+      const bStarts = b.match.startsWith(needle) ? 0 : 1;
+      return aStarts - bStarts || a.street.length - b.street.length || a.street.localeCompare(b.street, "ru");
+    })
+    .slice(0, limit)
+    .map(({ street }) => ({
+      label: street,
+      subtitle: "Улица Одессы",
+      query: `${street}, Одесса`,
+      source: "local-street",
+    }));
+}
+
 function formatMapboxPlace(feature) {
   const streetName = feature?.text_ru || feature?.text_uk || feature?.text || "";
   const address = feature?.address && streetName ? `${streetName} ${feature.address}` : "";
@@ -1455,7 +1502,13 @@ function renderAddressSuggestionList(list, suggestions) {
   list.innerHTML = suggestions
     .map(
       (item) => `
-        <button type="button" data-center="${item.center.join(",")}" data-label="${item.label}">
+        <button
+          type="button"
+          ${Array.isArray(item.center) ? `data-center="${item.center.join(",")}"` : ""}
+          data-label="${item.label}"
+          ${item.query ? `data-query="${item.query}"` : ""}
+          ${item.source ? `data-source="${item.source}"` : ""}
+        >
           <strong>${item.label}</strong>
           <span>${item.subtitle || "Одесса"}</span>
         </button>
@@ -1479,23 +1532,26 @@ async function showAddressSuggestions(point, query) {
     subtitle: place.subtitle || "Одесса",
     center: place.center,
   }));
+  const streets = getLocalStreetSuggestions(cleanQuery, 8);
 
-  renderAddressSuggestionList(list, known.slice(0, 10));
+  renderAddressSuggestionList(list, [...known, ...streets].slice(0, 10));
 
   try {
+    if (!odessaStreetNames.length) await loadOdessaStreets();
     const remote = (await searchMapboxPlaces(cleanQuery, 12)).map((feature) => ({
       label: formatMapboxPlace(feature),
       subtitle: formatSuggestionSubtitle(feature),
       center: feature.center,
     }));
 
-    const suggestions = [...known, ...remote]
+    const freshStreets = getLocalStreetSuggestions(cleanQuery, 8);
+    const suggestions = [...known, ...freshStreets, ...remote]
       .filter((item, index, items) => item.label && items.findIndex((candidate) => candidate.label === item.label) === index)
       .slice(0, 10);
 
     renderAddressSuggestionList(list, suggestions);
   } catch {
-    renderAddressSuggestionList(list, known.slice(0, 10));
+    renderAddressSuggestionList(list, [...known, ...getLocalStreetSuggestions(cleanQuery, 8)].slice(0, 10));
   }
 }
 
@@ -1511,6 +1567,7 @@ function bindAddressSearch() {
       }
     });
     input.addEventListener("input", () => {
+      delete input.dataset.selectedLabel;
       clearTimeout(addressSearchTimer);
       addressSearchTimer = window.setTimeout(() => showAddressSuggestions(point, input.value), 220);
     });
@@ -1530,6 +1587,7 @@ function bindAddressSearch() {
     if (!input) return;
 
     const index = Number(input.dataset.stopIndex || 0);
+    delete input.dataset.selectedLabel;
     clearTimeout(addressSearchTimer);
     addressSearchTimer = window.setTimeout(() => showAddressSuggestions(`stop-${index}`, input.value), 220);
   });
@@ -1566,6 +1624,9 @@ function applyTheme(theme) {
     novaMap.once("style.load", () => {
       localizeMapLabels();
       installRouteLayer();
+      installRoutePointLayer();
+      installStopLayer();
+      renderRoutePointMarkers();
       renderStopMarkers();
       updateRouteLine();
     });
@@ -1610,7 +1671,8 @@ async function saveNewAddressFromForm() {
   if (!title || !address) return;
 
   const selectedCenter = $("#newAddressValue")?.dataset.selectedCenter?.split(",").map(Number);
-  const resolved = normalizeRouteCoordinates(selectedCenter) ? { label: address, center: selectedCenter } : await resolveAddressCandidate(address);
+  const selectedQuery = $("#newAddressValue")?.dataset.selectedQuery || address;
+  const resolved = normalizeRouteCoordinates(selectedCenter) ? { label: address, center: selectedCenter } : await resolveAddressCandidate(selectedQuery);
   if (!resolved?.center) {
     alert("Адрес не найден. Выберите вариант из списка подсказок.");
     $("#newAddressValue")?.focus();
@@ -1628,6 +1690,8 @@ function bindSavedAddressSearch() {
   input.dataset.boundSearch = "true";
 
   input.addEventListener("input", () => {
+    delete input.dataset.selectedCenter;
+    delete input.dataset.selectedQuery;
     clearTimeout(addressSearchTimer);
     addressSearchTimer = window.setTimeout(() => showAddressSuggestions("saved-address", input.value), 220);
   });
@@ -3492,15 +3556,20 @@ function bindEvents() {
   $("#authForm").addEventListener("submit", finishAuth);
   $("#clientPriceInput")?.addEventListener("input", syncClientRidePrice);
   bindAddressSearch();
-  $("#ridePanel").addEventListener("pointerdown", (event) => {
+  $("#ridePanel").addEventListener("pointerdown", async (event) => {
     const suggestion = event.target.closest(".address-suggestions button");
     if (!suggestion) return;
 
     event.preventDefault();
     const container = suggestion.closest(".address-suggestions");
     const point = container.dataset.suggestions;
-    const center = suggestion.dataset.center.split(",").map(Number);
-    setAddressPoint(point, center, suggestion.dataset.label || suggestion.querySelector("strong")?.textContent.trim() || suggestion.textContent.trim());
+    const label = suggestion.dataset.label || suggestion.querySelector("strong")?.textContent.trim() || suggestion.textContent.trim();
+    const center = suggestion.dataset.center?.split(",").map(Number);
+    if (normalizeRouteCoordinates(center)) {
+      setAddressPoint(point, center, label);
+    } else {
+      await geocodeAddress(point, suggestion.dataset.query || label);
+    }
   });
   $("#taxiScreen").addEventListener("click", (event) => {
     const openChatButton = event.target.closest(".open-chat");
@@ -3760,6 +3829,7 @@ function bindEvents() {
       if (input) {
         input.value = savedSuggestion.dataset.label || savedSuggestion.querySelector("strong")?.textContent.trim() || savedSuggestion.textContent.trim();
         input.dataset.selectedCenter = savedSuggestion.dataset.center || "";
+        input.dataset.selectedQuery = savedSuggestion.dataset.query || input.value;
       }
       hideAddressSuggestions("saved-address");
       return;
@@ -3798,6 +3868,7 @@ function bindEvents() {
 
 bindEvents();
 setAuthStep("start");
+loadOdessaStreets();
 loadAuthConfig();
 if (!restorePersistentAuth()) {
   restorePendingAuth();
