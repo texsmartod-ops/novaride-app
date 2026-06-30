@@ -2040,23 +2040,26 @@ body.dark .verification-step-header {
 .map-picker-topbar {
   position: absolute;
   top: max(14px, env(safe-area-inset-top));
-  left: 14px;
-  right: 14px;
+  left: max(20px, env(safe-area-inset-left));
+  right: max(20px, env(safe-area-inset-right));
   z-index: 3;
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 12px;
   align-items: center;
 }
 
 .map-picker-close {
-  width: 48px;
-  height: 48px;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
   border: 0;
   border-radius: 50%;
   background: rgba(7, 23, 47, 0.86);
   color: #fff;
-  font-size: 2.3rem;
+  font-size: 2.05rem;
+  font-weight: 900;
   line-height: 1;
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
 }
@@ -2150,11 +2153,11 @@ body.dark .verification-step-header {
   min-height: 62px;
   border: 0;
   border-radius: 8px;
-  background: linear-gradient(135deg, #b9ff16, #78ee22);
-  color: #07172f;
+  background: linear-gradient(135deg, var(--blue), #05b9ff);
+  color: #fff;
   font-size: clamp(1.2rem, 4vw, 1.6rem);
   font-weight: 1000;
-  box-shadow: 0 20px 42px rgba(7, 23, 47, 0.28);
+  box-shadow: 0 20px 42px rgba(29, 103, 255, 0.3);
 }
 
 .address-suggestions.is-open {
