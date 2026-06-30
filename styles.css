@@ -4648,13 +4648,13 @@ body.dark .companion-bubble {
   }
 
   .map-class-strip .class-card {
-    min-height: 92px;
-    padding: 8px 4px 10px;
+    min-height: 108px;
+    padding: 8px 3px 10px;
   }
 
   .tariff-icon {
-    width: clamp(58px, 86%, 82px);
-    height: 44px;
+    width: clamp(74px, 96%, 104px);
+    height: 58px;
   }
 
   .map-class-strip .class-card strong {
