@@ -1984,8 +1984,8 @@ body.dark .verification-step-header {
   right: 8px;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border: 1px solid rgba(29, 103, 255, 0.18);
   border-radius: 8px;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(232, 242, 255, 0.96));
@@ -1994,36 +1994,12 @@ body.dark .verification-step-header {
   cursor: pointer;
 }
 
-.open-map-picker span {
-  position: relative;
-  width: 17px;
-  height: 17px;
-  border: 2px solid var(--blue);
-  border-radius: 5px;
-}
-
-.open-map-picker span::before,
-.open-map-picker span::after {
-  content: "";
-  position: absolute;
-}
-
-.open-map-picker span::before {
-  left: 50%;
-  top: 50%;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: linear-gradient(145deg, var(--blue), var(--cyan));
-  transform: translate(-50%, -50%);
-}
-
-.open-map-picker span::after {
-  left: 50%;
-  bottom: -8px;
-  border: 5px solid transparent;
-  border-top-color: var(--blue);
-  transform: translateX(-50%);
+.open-map-picker img {
+  width: 25px;
+  height: 25px;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 3px 5px rgba(29, 103, 255, 0.14));
 }
 
 .open-map-picker:hover {

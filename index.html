@@ -12,7 +12,7 @@
     <link rel="icon" href="/assets/novadrive-icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
     <link href="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.css" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css?v=20260629-011" />
+    <link rel="stylesheet" href="/styles.css?v=20260630-001" />
   </head>
   <body>
     <main class="app-shell">
@@ -251,7 +251,7 @@
                   <div class="address-field">
                     <input id="fromInput" value="Одесса, Дерибасовская 1" aria-label="Точка A" list="odessaAddressHints" autocomplete="off" />
                     <button class="open-map-picker" type="button" data-map-point="a" aria-label="Выбрать точку A на карте">
-                      <span></span>
+                      <img src="/assets/location-picker.png" alt="" />
                     </button>
                     <div class="address-suggestions" data-suggestions="a"></div>
                   </div>
@@ -263,7 +263,7 @@
                   <div class="address-field">
                     <input id="toInput" value="Аркадия, Гагаринское плато" aria-label="Точка B" list="odessaAddressHints" autocomplete="off" />
                     <button class="open-map-picker" type="button" data-map-point="b" aria-label="Выбрать точку B на карте">
-                      <span></span>
+                      <img src="/assets/location-picker.png" alt="" />
                     </button>
                     <div class="address-suggestions" data-suggestions="b"></div>
                   </div>
@@ -346,7 +346,7 @@
     </section>
 
     <script src="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.js"></script>
-    <script src="/app.js?v=20260629-011"></script>
+    <script src="/app.js?v=20260630-001"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
