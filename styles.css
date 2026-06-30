@@ -1519,7 +1519,7 @@ body.dark .verification-step-header {
 .locate-me-btn {
   position: absolute;
   right: 18px;
-  bottom: 122px;
+  top: 18px;
   z-index: 9;
   width: 54px;
   height: 54px;
