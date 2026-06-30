@@ -971,7 +971,7 @@ function resizeClientPriceInput() {
   if (!input) return;
 
   const digits = String(input.value || input.placeholder || "150").replace(/\D/g, "").length || 3;
-  input.style.width = `${Math.min(Math.max(digits + 0.45, 3.1), 8.5)}ch`;
+  input.style.width = `${Math.min(Math.max(digits * 1.18 + 0.75, 4), 9.5)}ch`;
 }
 
 function syncClientRidePrice() {
