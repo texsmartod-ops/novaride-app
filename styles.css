@@ -1776,13 +1776,14 @@ body.dark .verification-step-header {
   bottom: 0;
   z-index: 7;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   padding: 30px 18px 18px;
   border-radius: 22px 22px 0 0;
   background: rgba(18, 18, 20, 0.94);
   box-shadow: 0 -20px 46px rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(20px);
+  overflow: hidden;
   transition: transform 220ms ease, opacity 220ms ease;
 }
 
@@ -2271,8 +2272,9 @@ body.dark .verification-step-header {
   display: grid;
   place-items: center;
   align-content: center;
+  min-width: 0;
   gap: 9px;
-  min-height: 132px;
+  min-height: 126px;
   padding: 13px 10px 16px;
   border: 1px solid transparent;
   border-radius: 14px;
@@ -2297,6 +2299,10 @@ body.dark .verification-step-header {
 }
 
 .map-class-strip .class-card strong {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 0.9rem;
   line-height: 1.1;
   letter-spacing: 0;
@@ -2321,8 +2327,8 @@ body.dark .verification-step-header {
 
 .tariff-icon {
   display: block;
-  width: min(156px, 22vw);
-  height: 78px;
+  width: clamp(92px, 72%, 142px);
+  height: 72px;
   object-fit: contain;
   filter: drop-shadow(0 12px 16px rgba(0, 0, 0, 0.24));
   transform: translateY(1px);
@@ -4636,7 +4642,7 @@ body.dark .companion-bubble {
   }
 
   .map-class-strip {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
     padding-inline: 10px;
   }
@@ -4647,12 +4653,12 @@ body.dark .companion-bubble {
   }
 
   .tariff-icon {
-    width: min(92px, 22vw);
-    height: 46px;
+    width: clamp(58px, 86%, 82px);
+    height: 44px;
   }
 
   .map-class-strip .class-card strong {
-    font-size: 0.72rem;
+    font-size: clamp(0.62rem, 2.6vw, 0.72rem);
   }
 
   .section-hero {
