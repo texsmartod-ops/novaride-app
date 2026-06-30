@@ -2066,7 +2066,7 @@ async function leaveAccount(kind) {
     state.authDestination = "";
     state.currentUser = null;
     state.driverMode = false;
-    $(".workspace")?.classList.remove("driver-mode");
+    $(".workspace")?.classList.remove("driver-mode", "driver-order-view", "history-map-view", "passenger-active-ride", "view-addresses");
     $("#taxiScreen").classList.add("is-hidden");
     $("#authScreen").classList.remove("is-hidden");
     setAuthStep("start");
@@ -2083,7 +2083,7 @@ function showSection(section) {
   clearInterval(driverChatTimer);
   driverFinanceTimer = null;
   driverChatTimer = null;
-  $(".workspace").classList.remove("driver-order-view");
+  $(".workspace").classList.remove("driver-order-view", "history-map-view");
   $(".workspace").classList.toggle("view-addresses", section === "addresses" && !state.driverMode);
   $("#driverPanel").classList.remove("order-detail-mode");
   state.currentSection = section;
@@ -2302,7 +2302,7 @@ async function showDriverVerificationGate() {
   clearInterval(driverAcceptedTimer);
   clearInterval(driverFinanceTimer);
   driverFinanceTimer = null;
-  $(".workspace").classList.remove("driver-order-view", "view-addresses");
+  $(".workspace").classList.remove("driver-order-view", "history-map-view", "view-addresses");
   $(".content-grid").classList.add("section-mode");
   $(".map-panel").classList.add("is-hidden");
   $("#ridePanel").classList.add("is-hidden");
@@ -2544,7 +2544,7 @@ function showDriverReturnToFeedNotice({ title, text, className = "" }) {
   localStorage.removeItem(DRIVER_ACTIVE_ORDER_KEY);
   localStorage.removeItem(DRIVER_DETAIL_ORDER_KEY);
   localStorage.setItem(DRIVER_TAB_KEY, "feed");
-  $(".workspace").classList.remove("driver-order-view");
+  $(".workspace").classList.remove("driver-order-view", "history-map-view");
   $(".content-grid").classList.add("section-mode");
   $(".map-panel").classList.add("is-hidden");
   $("#ridePanel").classList.add("is-hidden");
@@ -3013,6 +3013,8 @@ async function openHistoryOrder(orderId, role) {
     $("#driverPanel").classList.add("is-hidden");
     $("#infoPanel").classList.remove("is-hidden");
     $("#infoPanel").classList.add("active-panel");
+    $(".workspace").classList.remove("driver-order-view");
+    $(".workspace").classList.add("history-map-view");
     $("#screenTitle").textContent = "История поездки";
     $("#infoPanel").innerHTML = `
       <div class="history-detail-sheet">
@@ -3144,7 +3146,7 @@ function showDriverContent(tabName) {
   clearInterval(driverAcceptedTimer);
   clearInterval(driverFinanceTimer);
   driverFinanceTimer = null;
-  $(".workspace").classList.remove("driver-order-view", "view-addresses");
+  $(".workspace").classList.remove("driver-order-view", "history-map-view", "view-addresses");
   $("#driverPanel").classList.remove("order-detail-mode");
   $(".content-grid").classList.add("section-mode");
   $(".map-panel").classList.add("is-hidden");
@@ -3173,6 +3175,7 @@ async function showDriverOrderDetails(orderId) {
   localStorage.setItem(DRIVER_TAB_KEY, "feed");
 
   $(".content-grid").classList.remove("section-mode");
+  $(".workspace").classList.remove("history-map-view");
   $(".workspace").classList.add("driver-order-view");
   $(".map-panel").classList.remove("is-hidden");
   $("#ridePanel").classList.add("is-hidden");
@@ -3246,6 +3249,7 @@ function showDriverAcceptedOrder(order, options = {}) {
     driverAcceptedTimer = window.setInterval(() => pollDriverAcceptedOrder(order.id), 1500);
   }
 
+  $(".workspace").classList.remove("history-map-view");
   $(".workspace").classList.add("driver-order-view");
   $(".content-grid").classList.remove("section-mode");
   $(".map-panel").classList.remove("is-hidden");

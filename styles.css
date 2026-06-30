@@ -1810,7 +1810,11 @@ body.dark .verification-step-header {
 }
 
 .workspace.driver-order-view .map-class-strip,
-.workspace.driver-order-view .locate-me-btn {
+.workspace.driver-order-view .locate-me-btn,
+.workspace.driver-order-view .map-hud,
+.workspace.history-map-view .map-class-strip,
+.workspace.history-map-view .locate-me-btn,
+.workspace.history-map-view .map-hud {
   display: none;
 }
 
@@ -1819,7 +1823,8 @@ body.dark .verification-step-header {
 .workspace.passenger-active-ride .comment-card,
 .workspace.passenger-active-ride .price-glass,
 .workspace.passenger-active-ride .order-button,
-.workspace.passenger-active-ride .locate-me-btn {
+.workspace.passenger-active-ride .locate-me-btn,
+.workspace.passenger-active-ride .map-hud {
   display: none;
 }
 
