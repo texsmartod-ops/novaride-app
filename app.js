@@ -966,7 +966,16 @@ function getClientRidePrice() {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
+function resizeClientPriceInput() {
+  const input = $("#clientPriceInput");
+  if (!input) return;
+
+  const digits = String(input.value || input.placeholder || "150").replace(/\D/g, "").length || 3;
+  input.style.width = `${Math.min(Math.max(digits + 0.45, 3.1), 8.5)}ch`;
+}
+
 function syncClientRidePrice() {
+  resizeClientPriceInput();
   const price = getClientRidePrice();
   if (price > 0) {
     state.selectedPrice = price;
@@ -3826,6 +3835,7 @@ function bindEvents() {
   });
   $("#authForm").addEventListener("submit", finishAuth);
   $("#clientPriceInput")?.addEventListener("input", syncClientRidePrice);
+  resizeClientPriceInput();
   bindAddressSearch();
   $("#ridePanel").addEventListener("click", (event) => {
     const pickerButton = event.target.closest(".open-map-picker");

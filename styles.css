@@ -2442,8 +2442,9 @@ body.dark .verification-step-header {
 }
 
 .price-glass input {
-  width: clamp(88px, 24vw, 118px);
+  width: 3.4ch;
   min-width: 0;
+  max-width: 10ch;
   min-height: 44px;
   border: 0;
   background: transparent;
@@ -2473,6 +2474,7 @@ body.dark .verification-step-header {
   font-size: clamp(1.35rem, 4.6vw, 1.75rem);
   font-weight: 1000;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .price-glass em {
