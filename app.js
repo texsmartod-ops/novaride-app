@@ -40,6 +40,272 @@ const ORDER_SEARCH_SECONDS = 40;
 const MAX_ROUTE_STOPS = 5;
 const STOP_POINT_LABELS = ["C", "D", "E", "F", "G"];
 const DRIVER_COMMISSION_RATE = 0.1;
+const THEME_KEY = "novaride_theme";
+const LANGUAGE_KEY = "novaride_language";
+
+const UI_TEXT = {
+  ru: {
+    menu: {
+      ride: "Поездка",
+      passengerHistory: "История заказов",
+      driverHistory: "История поездок",
+      addresses: "Мои адреса",
+      driverChat: "Водительский чат",
+      notifications: "Уведомления",
+      safety: "Безопасность",
+      settings: "Настройки",
+      help: "Помощь",
+      driverCta: "Стать водителем",
+      passengerCta: "Стать пассажиром",
+      feed: "Лента",
+      stats: "Статистика",
+      wallet: "Кошелек",
+    },
+    settings: {
+      title: "Настройки",
+      eyebrow: "Персонализация",
+      copy: "Тема, язык, документы и управление аккаунтом.",
+      theme: "Тема",
+      light: "Светлая",
+      dark: "Темная",
+      language: "Язык",
+      distance: "Расстояние",
+      legal: "Правовые документы",
+      legalCopy: "Оферта, лицензии, приватность",
+      version: "Версия приложения",
+      account: "Аккаунт",
+      logout: "Выйти",
+      delete: "Удалить",
+      themeUpdated: "Тема обновлена",
+      languageUpdated: "Язык обновлен",
+      switched: "Интерфейс переключен",
+      selected: "Выбрано",
+    },
+    notifications: {
+      title: "Уведомления",
+      eyebrow: "Центр событий",
+      copy: "Бонусы, поездки, безопасность и важные обновления сервиса.",
+      welcome: "Добро пожаловать в NovaRide",
+      welcomeCopy: "Спасибо за регистрацию. Первый заказ уже можно оформить.",
+      bonus: "Бонус",
+      bonusCopy: "Сохраняйте любимые адреса и вызывайте авто быстрее.",
+      new: "Новое",
+    },
+    safety: {
+      title: "Безопасность",
+      eyebrow: "Защита поездки",
+      copy: "Экстренная помощь, контроль маршрута и прозрачные правила.",
+      security: "Служба безопасности",
+      securityCopy: "Письмо или сообщение администратору",
+      emergency: "Экстренный вызов 112",
+      emergencyCopy: "Быстрый вызов службы помощи",
+      privacy: "Политика конфиденциальности",
+      privacyCopy: "Текст о защите данных NovaRide",
+    },
+    help: {
+      title: "Помощь",
+      eyebrow: "Мы рядом",
+      copy: "Поддержка клиента и водителя без долгого поиска нужной кнопки.",
+      support: "Техподдержка",
+      supportCopy: "Открыть чат с администратором",
+      faq: "Частые вопросы",
+      faqCopy: "Вопросы и ответы по поездкам",
+    },
+    driver: {
+      verified: "Водитель подтвержден · рейтинг 4.86",
+      verification: "Верификация водителя",
+      feedEyebrow: "Режим водителя",
+      feedTitle: "Заказы",
+      online: "На линии",
+      loadingOrders: "Загружаем реальные заказы...",
+      statsEyebrow: "Динамика",
+      walletEyebrow: "Баланс",
+      walletCopy: "Комиссия NovaRide списывается только с завершенных заказов.",
+      loadingTrips: "загружаем реальные поездки",
+      commission: "комиссия 10%",
+      topUp: "Пополнить баланс",
+      tripsEyebrow: "Мои рейсы",
+      tripsCopy: "Поездки, которые вы уже выполнили как водитель.",
+      loadingHistory: "Загружаем историю...",
+      historyWillAppear: "Здесь появятся завершенные реальные поездки.",
+    },
+    profileRating: "Рейтинг",
+  },
+  uk: {
+    menu: {
+      ride: "Поїздка",
+      passengerHistory: "Історія замовлень",
+      driverHistory: "Історія поїздок",
+      addresses: "Мої адреси",
+      driverChat: "Чат водіїв",
+      notifications: "Сповіщення",
+      safety: "Безпека",
+      settings: "Налаштування",
+      help: "Допомога",
+      driverCta: "Стати водієм",
+      passengerCta: "Стати пасажиром",
+      feed: "Стрічка",
+      stats: "Статистика",
+      wallet: "Гаманець",
+    },
+    settings: {
+      title: "Налаштування",
+      eyebrow: "Персоналізація",
+      copy: "Тема, мова, документи та керування акаунтом.",
+      theme: "Тема",
+      light: "Світла",
+      dark: "Темна",
+      language: "Мова",
+      distance: "Відстань",
+      legal: "Правові документи",
+      legalCopy: "Оферта, ліцензії, приватність",
+      version: "Версія застосунку",
+      account: "Акаунт",
+      logout: "Вийти",
+      delete: "Видалити",
+      themeUpdated: "Тему оновлено",
+      languageUpdated: "Мову оновлено",
+      switched: "Інтерфейс перемкнено",
+      selected: "Обрано",
+    },
+    notifications: {
+      title: "Сповіщення",
+      eyebrow: "Центр подій",
+      copy: "Бонуси, поїздки, безпека та важливі оновлення сервісу.",
+      welcome: "Ласкаво просимо до NovaRide",
+      welcomeCopy: "Дякуємо за реєстрацію. Перше замовлення вже можна оформити.",
+      bonus: "Бонус",
+      bonusCopy: "Зберігайте улюблені адреси та викликайте авто швидше.",
+      new: "Нове",
+    },
+    safety: {
+      title: "Безпека",
+      eyebrow: "Захист поїздки",
+      copy: "Екстрена допомога, контроль маршруту та прозорі правила.",
+      security: "Служба безпеки",
+      securityCopy: "Лист або повідомлення адміністратору",
+      emergency: "Екстрений виклик 112",
+      emergencyCopy: "Швидкий виклик служби допомоги",
+      privacy: "Політика конфіденційності",
+      privacyCopy: "Текст про захист даних NovaRide",
+    },
+    help: {
+      title: "Допомога",
+      eyebrow: "Ми поруч",
+      copy: "Підтримка клієнта і водія без довгого пошуку потрібної кнопки.",
+      support: "Техпідтримка",
+      supportCopy: "Відкрити чат з адміністратором",
+      faq: "Часті питання",
+      faqCopy: "Питання та відповіді щодо поїздок",
+    },
+    driver: {
+      verified: "Водія підтверджено · рейтинг 4.86",
+      verification: "Верифікація водія",
+      feedEyebrow: "Режим водія",
+      feedTitle: "Замовлення",
+      online: "На лінії",
+      loadingOrders: "Завантажуємо реальні замовлення...",
+      statsEyebrow: "Динаміка",
+      walletEyebrow: "Баланс",
+      walletCopy: "Комісія NovaRide списується тільки із завершених замовлень.",
+      loadingTrips: "завантажуємо реальні поїздки",
+      commission: "комісія 10%",
+      topUp: "Поповнити баланс",
+      tripsEyebrow: "Мої рейси",
+      tripsCopy: "Поїздки, які ви вже виконали як водій.",
+      loadingHistory: "Завантажуємо історію...",
+      historyWillAppear: "Тут з'являться завершені реальні поїздки.",
+    },
+    profileRating: "Рейтинг",
+  },
+  en: {
+    menu: {
+      ride: "Ride",
+      passengerHistory: "Order history",
+      driverHistory: "Trip history",
+      addresses: "My addresses",
+      driverChat: "Driver chat",
+      notifications: "Notifications",
+      safety: "Safety",
+      settings: "Settings",
+      help: "Help",
+      driverCta: "Become a driver",
+      passengerCta: "Become a passenger",
+      feed: "Feed",
+      stats: "Stats",
+      wallet: "Wallet",
+    },
+    settings: {
+      title: "Settings",
+      eyebrow: "Personalization",
+      copy: "Theme, language, documents and account control.",
+      theme: "Theme",
+      light: "Light",
+      dark: "Dark",
+      language: "Language",
+      distance: "Distance",
+      legal: "Legal documents",
+      legalCopy: "Offer, licenses, privacy",
+      version: "App version",
+      account: "Account",
+      logout: "Log out",
+      delete: "Delete",
+      themeUpdated: "Theme updated",
+      languageUpdated: "Language updated",
+      switched: "Interface switched",
+      selected: "Selected",
+    },
+    notifications: {
+      title: "Notifications",
+      eyebrow: "Event center",
+      copy: "Bonuses, rides, safety and important service updates.",
+      welcome: "Welcome to NovaRide",
+      welcomeCopy: "Thanks for signing up. Your first order is ready to go.",
+      bonus: "Bonus",
+      bonusCopy: "Save favorite addresses and book a car faster.",
+      new: "New",
+    },
+    safety: {
+      title: "Safety",
+      eyebrow: "Ride protection",
+      copy: "Emergency help, route control and clear rules.",
+      security: "Safety team",
+      securityCopy: "Message or email the administrator",
+      emergency: "Emergency call 112",
+      emergencyCopy: "Fast help service call",
+      privacy: "Privacy policy",
+      privacyCopy: "NovaRide data protection text",
+    },
+    help: {
+      title: "Help",
+      eyebrow: "We are here",
+      copy: "Support for clients and drivers without searching around.",
+      support: "Support",
+      supportCopy: "Open administrator chat",
+      faq: "FAQ",
+      faqCopy: "Questions and answers about rides",
+    },
+    driver: {
+      verified: "Driver verified · rating 4.86",
+      verification: "Driver verification",
+      feedEyebrow: "Driver mode",
+      feedTitle: "Orders",
+      online: "Online",
+      loadingOrders: "Loading real orders...",
+      statsEyebrow: "Performance",
+      walletEyebrow: "Balance",
+      walletCopy: "NovaRide commission is charged only from completed orders.",
+      loadingTrips: "loading real trips",
+      commission: "10% commission",
+      topUp: "Top up balance",
+      tripsEyebrow: "My rides",
+      tripsCopy: "Trips you have already completed as a driver.",
+      loadingHistory: "Loading history...",
+      historyWillAppear: "Completed real trips will appear here.",
+    },
+    profileRating: "Rating",
+  },
+};
 
 let MAPBOX_TOKEN = "";
 const ODESSA_CENTER = [30.7233, 46.4825];
@@ -206,74 +472,74 @@ const sections = {
   },
   notifications: {
     title: "Уведомления",
-    html: `
-      <div class="section-hero"><span>Центр событий</span><h2>Уведомления</h2><p>Бонусы, поездки, безопасность и важные обновления сервиса.</p></div>
-      <article class="list-card accent-card"><strong>Добро пожаловать в NovaRide</strong><span>Спасибо за регистрацию. Первый заказ уже можно оформить.</span><em>Новое</em></article>
-      <article class="list-card"><strong>Бонус</strong><span>Сохраняйте любимые адреса и вызывайте авто быстрее.</span><em>-10%</em></article>
+    html: () => `
+      <div class="section-hero"><span>${t("notifications.eyebrow")}</span><h2>${t("notifications.title")}</h2><p>${t("notifications.copy")}</p></div>
+      <article class="list-card accent-card"><strong>${t("notifications.welcome")}</strong><span>${t("notifications.welcomeCopy")}</span><em>${t("notifications.new")}</em></article>
+      <article class="list-card"><strong>${t("notifications.bonus")}</strong><span>${t("notifications.bonusCopy")}</span><em>-10%</em></article>
     `,
   },
   safety: {
     title: "Безопасность",
-    html: `
-      <div class="section-hero"><span>Защита поездки</span><h2>Безопасность</h2><p>Экстренная помощь, контроль маршрута и прозрачные правила.</p></div>
+    html: () => `
+      <div class="section-hero"><span>${t("safety.eyebrow")}</span><h2>${t("safety.title")}</h2><p>${t("safety.copy")}</p></div>
       <div class="feature-grid">
-        <button class="list-card action-card accent-card" data-action="security"><strong>Служба безопасности</strong><span>Письмо или сообщение администратору</span><em>24/7</em></button>
-        <button class="list-card action-card" data-action="emergency"><strong>Экстренный вызов 112</strong><span>Быстрый вызов службы помощи</span><em>SOS</em></button>
-        <button class="list-card action-card" data-action="privacy"><strong>Политика конфиденциальности</strong><span>Текст о защите данных NovaRide</span><em>Data</em></button>
+        <button class="list-card action-card accent-card" data-action="security"><strong>${t("safety.security")}</strong><span>${t("safety.securityCopy")}</span><em>24/7</em></button>
+        <button class="list-card action-card" data-action="emergency"><strong>${t("safety.emergency")}</strong><span>${t("safety.emergencyCopy")}</span><em>SOS</em></button>
+        <button class="list-card action-card" data-action="privacy"><strong>${t("safety.privacy")}</strong><span>${t("safety.privacyCopy")}</span><em>Data</em></button>
       </div>
       <div class="interactive-box" id="sectionActionBox"></div>
     `,
   },
   settings: {
     title: "Настройки",
-    html: `
-      <div class="section-hero"><span>Персонализация</span><h2>Настройки</h2><p>Тема, язык, документы и управление аккаунтом.</p></div>
+    html: () => `
+      <div class="section-hero"><span>${t("settings.eyebrow")}</span><h2>${t("settings.title")}</h2><p>${t("settings.copy")}</p></div>
       <div class="feature-grid">
-        <article class="list-card control-card"><strong>Тема</strong><div class="setting-row"><button data-theme="light">Светлая</button><button data-theme="dark">Темная</button><button data-theme="system">Система</button></div></article>
-        <article class="list-card control-card"><strong>Язык</strong><div class="setting-row"><button data-lang="uk">Укр</button><button data-lang="ru">Рус</button><button data-lang="en">Eng</button></div></article>
-        <article class="list-card control-card"><strong>Расстояние</strong><div class="setting-row"><button data-unit="km">км</button><button data-unit="mi">mi</button></div></article>
-        <button class="list-card action-card" data-action="legal"><strong>Правовые документы</strong><span>Оферта, лицензии, приватность</span><em>Legal</em></button>
-        <article class="list-card"><strong>Версия приложения</strong><span>1.1.0</span><em>Nova</em></article>
-        <article class="list-card control-card"><strong>Аккаунт</strong><div class="setting-row danger"><button data-account="logout">Выйти</button><button data-account="delete">Удалить</button></div></article>
+        <article class="list-card control-card"><strong>${t("settings.theme")}</strong><div class="setting-row"><button data-theme="light">${t("settings.light")}</button><button data-theme="dark">${t("settings.dark")}</button></div></article>
+        <article class="list-card control-card"><strong>${t("settings.language")}</strong><div class="setting-row"><button data-lang="uk">Укр</button><button data-lang="ru">Рус</button><button data-lang="en">Eng</button></div></article>
+        <article class="list-card control-card"><strong>${t("settings.distance")}</strong><div class="setting-row"><button data-unit="km">км</button><button data-unit="mi">mi</button></div></article>
+        <button class="list-card action-card" data-action="legal"><strong>${t("settings.legal")}</strong><span>${t("settings.legalCopy")}</span><em>Legal</em></button>
+        <article class="list-card"><strong>${t("settings.version")}</strong><span>1.1.0</span><em>Nova</em></article>
+        <article class="list-card control-card"><strong>${t("settings.account")}</strong><div class="setting-row danger"><button data-account="logout">${t("settings.logout")}</button><button data-account="delete">${t("settings.delete")}</button></div></article>
       </div>
       <div class="interactive-box" id="sectionActionBox"></div>
     `,
   },
   help: {
     title: "Помощь",
-    html: `
-      <div class="section-hero"><span>Мы рядом</span><h2>Помощь</h2><p>Поддержка клиента и водителя без долгого поиска нужной кнопки.</p></div>
-      <button class="list-card action-card accent-card" data-action="support"><strong>Техподдержка</strong><span>Открыть чат с администратором</span><em>online</em></button>
-        <button class="list-card action-card" data-action="faq"><strong>Частые вопросы</strong><span>Вопросы и ответы по поездкам</span><em>FAQ</em></button>
+    html: () => `
+      <div class="section-hero"><span>${t("help.eyebrow")}</span><h2>${t("help.title")}</h2><p>${t("help.copy")}</p></div>
+      <button class="list-card action-card accent-card" data-action="support"><strong>${t("help.support")}</strong><span>${t("help.supportCopy")}</span><em>online</em></button>
+        <button class="list-card action-card" data-action="faq"><strong>${t("help.faq")}</strong><span>${t("help.faqCopy")}</span><em>FAQ</em></button>
       <div class="interactive-box" id="sectionActionBox"></div>
     `,
   },
 };
 
 const driverTabs = {
-  feed: `
-    <div class="section-hero driver-hero compact driver-line-hero"><span>Режим водителя</span><h2>Заказы</h2><em>На линии</em></div>
-    <div class="driver-feed" id="driverFeed"><article class="driver-empty-card">Загружаем реальные заказы...</article></div>
+  feed: () => `
+    <div class="section-hero driver-hero compact driver-line-hero"><span>${t("driver.feedEyebrow")}</span><h2>${t("driver.feedTitle")}</h2><em>${t("driver.online")}</em></div>
+    <div class="driver-feed" id="driverFeed"><article class="driver-empty-card">${t("driver.loadingOrders")}</article></div>
     <div class="driver-route-preview" id="driverRoutePreview"></div>
   `,
-  stats: `
-    <div class="section-hero driver-hero compact"><span>Динамика</span><h2>Статистика</h2></div>
-    <div class="feature-grid" id="driverStatsGrid"><article class="metric-card"><strong>...</strong><span>загружаем реальные поездки</span></article></div>
+  stats: () => `
+    <div class="section-hero driver-hero compact"><span>${t("driver.statsEyebrow")}</span><h2>${t("menu.stats")}</h2></div>
+    <div class="feature-grid" id="driverStatsGrid"><article class="metric-card"><strong>...</strong><span>${t("driver.loadingTrips")}</span></article></div>
   `,
-  wallet: `
-    <div class="section-hero driver-hero"><span>Баланс</span><h2>Кошелек</h2><p>Комиссия NovaRide списывается только с завершенных заказов.</p></div>
-    <div id="driverWalletGrid"><article class="wallet-card"><strong>...</strong><span>загружаем реальные поездки</span><em>комиссия 10%</em></article></div>
-    <button class="primary-action" type="button">Пополнить баланс</button>
+  wallet: () => `
+    <div class="section-hero driver-hero"><span>${t("driver.walletEyebrow")}</span><h2>${t("menu.wallet")}</h2><p>${t("driver.walletCopy")}</p></div>
+    <div id="driverWalletGrid"><article class="wallet-card"><strong>...</strong><span>${t("driver.loadingTrips")}</span><em>${t("driver.commission")}</em></article></div>
+    <button class="primary-action" type="button">${t("driver.topUp")}</button>
   `,
 };
 
 const driverSections = {
   history: {
     title: "История поездок",
-    html: `
-      <div class="section-hero driver-hero"><span>Мои рейсы</span><h2>История поездок</h2><p>Поездки, которые вы уже выполнили как водитель.</p></div>
+    html: () => `
+      <div class="section-hero driver-hero"><span>${t("driver.tripsEyebrow")}</span><h2>${t("menu.driverHistory")}</h2><p>${t("driver.tripsCopy")}</p></div>
       <div class="feature-grid" id="driverHistoryList">
-        <article class="list-card"><strong>Загружаем историю...</strong><span>Здесь появятся завершенные реальные поездки.</span><em>NovaRide</em></article>
+        <article class="list-card"><strong>${t("driver.loadingHistory")}</strong><span>${t("driver.historyWillAppear")}</span><em>NovaRide</em></article>
       </div>
     `,
   },
@@ -285,6 +551,14 @@ const driverSections = {
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+
+function getUiText() {
+  return UI_TEXT[state.language] || UI_TEXT.ru;
+}
+
+function t(path) {
+  return path.split(".").reduce((value, key) => value?.[key], getUiText()) || path;
+}
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
@@ -1897,7 +2171,9 @@ function playScreenTransition(callback) {
 }
 
 function applyTheme(theme) {
-  document.body.classList.toggle("dark", theme === "dark");
+  const nextTheme = theme === "dark" ? "dark" : "light";
+  localStorage.setItem(THEME_KEY, nextTheme);
+  document.body.classList.toggle("dark", nextTheme === "dark");
   if (novaMap) {
     novaMap.setStyle(getCurrentMapStyle());
     novaMap.once("style.load", () => {
@@ -1920,29 +2196,36 @@ function applyTheme(theme) {
   playScreenTransition(() => {
     const box = $("#sectionActionBox");
     if (box) {
-      box.innerHTML = `<div class="text-panel"><strong>Тема обновлена</strong><p>Выбрано: ${theme === "dark" ? "Темная" : theme === "light" ? "Светлая" : "Как в системе"}.</p></div>`;
+      box.innerHTML = `<div class="text-panel"><strong>${t("settings.themeUpdated")}</strong><p>${t("settings.selected")}: ${nextTheme === "dark" ? t("settings.dark") : t("settings.light")}.</p></div>`;
     }
   });
 }
 
 function applyLanguage(lang) {
-  state.language = lang;
-  const labels = {
-    ru: { ride: "Поездка", history: "История заказов", addresses: "Мои адреса", settings: "Настройки" },
-    uk: { ride: "Поїздка", history: "Історія поїздок", addresses: "Мої адреси", settings: "Налаштування" },
-    en: { ride: "Ride", history: "Trip history", addresses: "My addresses", settings: "Settings" },
-  }[lang];
-
-  if (!state.driverMode) {
-    $('.menu-item[data-section="ride"]').textContent = labels.ride;
-    $('.menu-item[data-section="history"]').textContent = labels.history;
-    $('.menu-item[data-section="addresses"]').textContent = labels.addresses;
-    $('.menu-item[data-section="settings"]').textContent = labels.settings;
-    if (state.currentSection === "ride") $("#screenTitle").textContent = labels.ride;
+  state.language = UI_TEXT[lang] ? lang : "ru";
+  localStorage.setItem(LANGUAGE_KEY, state.language);
+  document.documentElement.lang = state.language;
+  updateMenuForRole();
+  const activeDriverTab = localStorage.getItem(DRIVER_TAB_KEY);
+  if (state.driverMode && state.currentSection === "ride" && ["feed", "stats", "wallet"].includes(activeDriverTab)) {
+    showDriverContent(activeDriverTab);
+  } else if (state.currentSection !== "ride") {
+    showSection(state.currentSection);
+  } else {
+    $("#screenTitle").textContent = t("menu.ride");
   }
-
-  $("#sectionActionBox").innerHTML = `<div class="text-panel"><strong>Язык обновлен</strong><p>Интерфейс переключен: ${lang.toUpperCase()}.</p></div>`;
+  const box = $("#sectionActionBox");
+  if (box) box.innerHTML = `<div class="text-panel"><strong>${t("settings.languageUpdated")}</strong><p>${t("settings.switched")}: ${state.language.toUpperCase()}.</p></div>`;
   localizeMapLabels();
+}
+
+function restoreUiPreferences() {
+  const savedLanguage = localStorage.getItem(LANGUAGE_KEY);
+  const savedTheme = localStorage.getItem(THEME_KEY);
+  if (UI_TEXT[savedLanguage]) state.language = savedLanguage;
+  document.documentElement.lang = state.language;
+  document.body.classList.toggle("dark", savedTheme === "dark");
+  updateMenuForRole();
 }
 
 function addAddressFromSection() {
@@ -2104,12 +2387,12 @@ function showSection(section) {
   }
 
   if (section === "ride") {
-    $("#screenTitle").textContent = "Поездка";
+    $("#screenTitle").textContent = t("menu.ride");
     return;
   }
 
   const source = state.driverMode && driverSections[section] ? driverSections : sections;
-  $("#screenTitle").textContent = source[section].title;
+  $("#screenTitle").textContent = getSectionTitle(section);
   $("#infoPanel").innerHTML = renderSection(section, source);
   if (section === "history") {
     loadRideHistory(state.driverMode ? "driver" : "passenger");
@@ -2122,6 +2405,19 @@ function showSection(section) {
 function renderSection(section, source = sections) {
   const content = source[section].html;
   return typeof content === "function" ? content() : content;
+}
+
+function getSectionTitle(section) {
+  if (state.driverMode && section === "history") return t("menu.driverHistory");
+  if (section === "ride") return state.driverMode ? t("menu.feed") : t("menu.ride");
+  if (section === "history") return t("menu.passengerHistory");
+  if (section === "addresses") return t("menu.addresses");
+  if (section === "driverChat") return t("menu.driverChat");
+  if (section === "notifications") return t("menu.notifications");
+  if (section === "safety") return t("menu.safety");
+  if (section === "settings") return t("menu.settings");
+  if (section === "help") return t("menu.help");
+  return sections[section]?.title || section;
 }
 
 function getDriverVerification() {
@@ -3153,8 +3449,8 @@ function showDriverContent(tabName) {
   $("#ridePanel").classList.add("is-hidden");
   $("#infoPanel").classList.add("is-hidden");
   $("#driverPanel").classList.remove("is-hidden");
-  $("#screenTitle").textContent = tabName === "feed" ? "Лента" : tabName === "stats" ? "Статистика" : "Кошелек";
-  $("#driverContent").innerHTML = driverTabs[tabName];
+  $("#screenTitle").textContent = tabName === "feed" ? t("menu.feed") : tabName === "stats" ? t("menu.stats") : t("menu.wallet");
+  $("#driverContent").innerHTML = typeof driverTabs[tabName] === "function" ? driverTabs[tabName]() : driverTabs[tabName];
   $$(".driver-tab").forEach((tab) => tab.classList.toggle("is-active", tab.dataset.driverTab === tabName));
   $$(".menu-item").forEach((item) => item.classList.toggle("is-active", item.dataset.section === "ride" && tabName === "feed"));
   $("#sideMenu").classList.remove("is-open");
@@ -3811,17 +4107,23 @@ function updateMenuForRole() {
   const profileCard = $(".profile-card");
 
   $(".workspace")?.classList.toggle("driver-mode", state.driverMode);
-  rideItem.textContent = state.driverMode ? "Лента" : "Поездка";
-  historyItem.textContent = state.driverMode ? "История поездок" : "История заказов";
+  rideItem.textContent = state.driverMode ? t("menu.feed") : t("menu.ride");
+  historyItem.textContent = state.driverMode ? t("menu.driverHistory") : t("menu.passengerHistory");
+  addressesItem.textContent = t("menu.addresses");
+  driverChatItem.textContent = t("menu.driverChat");
+  $('.menu-item[data-section="notifications"]').textContent = t("menu.notifications");
+  $('.menu-item[data-section="safety"]').textContent = t("menu.safety");
+  $('.menu-item[data-section="settings"]').textContent = t("menu.settings");
+  $('.menu-item[data-section="help"]').textContent = t("menu.help");
   addressesItem.classList.toggle("is-hidden", state.driverMode);
   driverChatItem?.classList.toggle("is-hidden", !state.driverMode);
-  $("#driverModeBtn").textContent = state.driverMode ? "Стать пассажиром" : "Стать водителем";
+  $("#driverModeBtn").textContent = state.driverMode ? t("menu.passengerCta") : t("menu.driverCta");
   profileCard.classList.toggle("is-driver-verified", state.driverMode && isDriverApproved());
   $(".profile-card span").textContent = state.driverMode
     ? isDriverApproved()
-      ? "Водитель подтвержден · рейтинг 4.86"
-      : "Верификация водителя"
-    : `Рейтинг ${state.currentUser?.rating || 5}`;
+      ? t("driver.verified")
+      : t("driver.verification")
+    : `${t("profileRating")} ${state.currentUser?.rating || 5}`;
 }
 
 function saveAddress(button) {
@@ -4303,6 +4605,7 @@ function bindEvents() {
 }
 
 bindEvents();
+restoreUiPreferences();
 setAuthStep("start");
 loadOdessaStreets();
 loadAuthConfig();
