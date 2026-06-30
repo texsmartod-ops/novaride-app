@@ -1604,6 +1604,8 @@ function getCurrentMapStyle() {
 
 function getMapPickerStartPoint(point) {
   if (point === "b") return normalizeRouteCoordinates(mapPoints.b) || ODESSA_CENTER;
+  const stopIndex = getStopIndex(point);
+  if (stopIndex >= 0) return normalizeRouteCoordinates(mapPoints.stops?.[stopIndex]?.coordinates) || ODESSA_CENTER;
   return normalizeRouteCoordinates(mapPoints.a) || ODESSA_CENTER;
 }
 
@@ -1642,11 +1644,12 @@ function openMapPicker(point) {
     return;
   }
 
-  pickerPoint = point === "b" ? "b" : "a";
+  pickerPoint = getStopIndex(point) >= 0 ? point : point === "b" ? "b" : "a";
   pickerCenter = getMapPickerStartPoint(pickerPoint);
   pickerAddress = "";
 
-  $("#mapPickerTitle").textContent = pickerPoint === "a" ? "Точка посадки" : "Куда едем";
+  $("#mapPickerTitle").textContent =
+    getStopIndex(pickerPoint) >= 0 ? `Остановка ${getStopPointLabel(getStopIndex(pickerPoint))}` : pickerPoint === "a" ? "Точка посадки" : "Куда едем";
   setMapPickerText("Определяем адрес...");
   $("#mapPickerOverlay").classList.remove("is-hidden");
   $("#mapPickerOverlay").setAttribute("aria-hidden", "false");
@@ -1713,6 +1716,7 @@ function setAddressPoint(point, coordinates, label) {
       input.dataset.selectedLabel = label;
     }
     hideAddressSuggestions(point);
+    renderStopsList();
     renderStopMarkers();
     updateRouteLine();
     return;
