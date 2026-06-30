@@ -2747,6 +2747,10 @@ body.dark .verification-step-header {
   display: none;
 }
 
+.workspace.driver-mode .ride-companion {
+  display: none;
+}
+
 .interactive-box {
   margin-top: 16px;
 }
@@ -3241,6 +3245,15 @@ body.dark .verification-step-header {
 .wallet-card strong {
   color: var(--blue);
   font-size: 2rem;
+}
+
+.wallet-breakdown {
+  display: grid;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(29, 103, 255, 0.12);
+  color: var(--muted);
+  font-weight: 800;
 }
 
 .ride-companion {

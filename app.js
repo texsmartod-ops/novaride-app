@@ -39,6 +39,7 @@ const DRIVER_TAB_KEY = "novaride_driver_tab";
 const ORDER_SEARCH_SECONDS = 40;
 const MAX_ROUTE_STOPS = 5;
 const STOP_POINT_LABELS = ["C", "D", "E", "F", "G"];
+const DRIVER_COMMISSION_RATE = 0.1;
 
 let MAPBOX_TOKEN = "";
 const ODESSA_CENTER = [30.7233, 46.4825];
@@ -67,6 +68,7 @@ let activeOrderTimer;
 let driverAcceptedTimer;
 let driverVerificationTimer;
 let driverChatTimer;
+let driverFinanceTimer;
 let driverCarMarker;
 let lastRouteKey = "";
 let rideChatActiveUntil = 0;
@@ -256,11 +258,11 @@ const driverTabs = {
   `,
   stats: `
     <div class="section-hero driver-hero compact"><span>Динамика</span><h2>Статистика</h2></div>
-    <div class="feature-grid"><article class="metric-card"><strong>4.86</strong><span>рейтинг</span></article><article class="metric-card"><strong>1 280 грн</strong><span>сегодня</span></article><article class="metric-card"><strong>8 740 грн</strong><span>неделя</span></article><article class="metric-card"><strong>34 600 грн</strong><span>месяц</span></article></div>
+    <div class="feature-grid" id="driverStatsGrid"><article class="metric-card"><strong>...</strong><span>загружаем реальные поездки</span></article></div>
   `,
   wallet: `
     <div class="section-hero driver-hero"><span>Баланс</span><h2>Кошелек</h2><p>Комиссия NovaRide списывается только с завершенных заказов.</p></div>
-    <article class="wallet-card"><strong>640 грн</strong><span>доступный баланс</span><em>комиссия 10%</em></article>
+    <div id="driverWalletGrid"><article class="wallet-card"><strong>...</strong><span>загружаем реальные поездки</span><em>комиссия 10%</em></article></div>
     <button class="primary-action" type="button">Пополнить баланс</button>
   `,
 };
@@ -2064,6 +2066,7 @@ async function leaveAccount(kind) {
     state.authDestination = "";
     state.currentUser = null;
     state.driverMode = false;
+    $(".workspace")?.classList.remove("driver-mode");
     $("#taxiScreen").classList.add("is-hidden");
     $("#authScreen").classList.remove("is-hidden");
     setAuthStep("start");
@@ -2076,7 +2079,9 @@ async function leaveAccount(kind) {
 
 function showSection(section) {
   clearInterval(driverOrdersTimer);
+  clearInterval(driverFinanceTimer);
   clearInterval(driverChatTimer);
+  driverFinanceTimer = null;
   driverChatTimer = null;
   $(".workspace").classList.remove("driver-order-view");
   $(".workspace").classList.toggle("view-addresses", section === "addresses" && !state.driverMode);
@@ -2295,6 +2300,8 @@ async function showDriverVerificationGate() {
   updateMenuForRole();
   clearInterval(driverOrdersTimer);
   clearInterval(driverAcceptedTimer);
+  clearInterval(driverFinanceTimer);
+  driverFinanceTimer = null;
   $(".workspace").classList.remove("driver-order-view", "view-addresses");
   $(".content-grid").classList.add("section-mode");
   $(".map-panel").classList.add("is-hidden");
@@ -2370,7 +2377,9 @@ async function submitDriverVerification(form) {
 
 function showPassengerMode() {
   state.driverMode = false;
+  clearInterval(driverFinanceTimer);
   clearInterval(driverChatTimer);
+  driverFinanceTimer = null;
   driverChatTimer = null;
   localStorage.removeItem(DRIVER_ACTIVE_ORDER_KEY);
   localStorage.removeItem(DRIVER_DETAIL_ORDER_KEY);
@@ -2644,6 +2653,115 @@ function formatRideDate(value) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatMoney(value) {
+  return `${Math.round(Number(value) || 0).toLocaleString("ru-RU")} грн`;
+}
+
+function getOrderPriceValue(order) {
+  return Number.parseInt(String(order?.price || "0").replace(/[^\d]/g, ""), 10) || 0;
+}
+
+function getCompletedAt(order) {
+  const date = new Date(order?.completedAt || order?.createdAt || 0);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getDriverFinanceSummary(orders = []) {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekStart = new Date(todayStart);
+  weekStart.setDate(weekStart.getDate() - 6);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const ratingValues = orders
+    .map((order) => Number(order.passengerTripRating || order.driver?.rating || state.currentUser?.rating || 0))
+    .filter((rating) => Number.isFinite(rating) && rating > 0);
+
+  return orders.reduce(
+    (summary, order) => {
+      const price = getOrderPriceValue(order);
+      const date = getCompletedAt(order);
+      summary.total += price;
+      summary.trips += 1;
+      summary.distance += Number(order.distanceKm || 0);
+      if (date && date >= todayStart) summary.today += price;
+      if (date && date >= weekStart) summary.week += price;
+      if (date && date >= monthStart) summary.month += price;
+      return summary;
+    },
+    {
+      trips: 0,
+      total: 0,
+      today: 0,
+      week: 0,
+      month: 0,
+      distance: 0,
+      rating: ratingValues.length ? ratingValues.reduce((sum, rating) => sum + rating, 0) / ratingValues.length : Number(state.currentUser?.rating || 5),
+    },
+  );
+}
+
+function renderDriverStats(orders = []) {
+  const target = $("#driverStatsGrid");
+  if (!target) return;
+  const summary = getDriverFinanceSummary(orders);
+  target.innerHTML = `
+    <article class="metric-card"><strong>${summary.rating.toFixed(2)}</strong><span>рейтинг</span></article>
+    <article class="metric-card"><strong>${summary.trips}</strong><span>завершено поездок</span></article>
+    <article class="metric-card"><strong>${formatMoney(summary.today)}</strong><span>сегодня</span></article>
+    <article class="metric-card"><strong>${formatMoney(summary.week)}</strong><span>7 дней</span></article>
+    <article class="metric-card"><strong>${formatMoney(summary.month)}</strong><span>месяц</span></article>
+    <article class="metric-card"><strong>${summary.distance.toFixed(1)} км</strong><span>общий маршрут</span></article>
+  `;
+}
+
+function renderDriverWallet(orders = []) {
+  const target = $("#driverWalletGrid");
+  if (!target) return;
+  const summary = getDriverFinanceSummary(orders);
+  const commission = Math.round(summary.total * DRIVER_COMMISSION_RATE);
+  const net = Math.max(0, summary.total - commission);
+  target.innerHTML = `
+    <article class="wallet-card">
+      <strong>${formatMoney(net)}</strong>
+      <span>после комиссии NovaRide</span>
+      <em>комиссия 10%: ${formatMoney(commission)}</em>
+      <div class="wallet-breakdown">
+        <span>Всего заказов: ${summary.trips}</span>
+        <span>Клиенты оплатили: ${formatMoney(summary.total)}</span>
+        <span>За месяц: ${formatMoney(summary.month)}</span>
+      </div>
+    </article>
+  `;
+}
+
+function renderDriverFinanceError(tabName, message) {
+  const target = tabName === "wallet" ? $("#driverWalletGrid") : $("#driverStatsGrid");
+  if (!target) return;
+  target.innerHTML = `<article class="${tabName === "wallet" ? "wallet-card" : "metric-card"}"><strong>0 грн</strong><span>${escapeHtml(message)}</span></article>`;
+}
+
+async function loadDriverFinance(tabName) {
+  const destination = state.currentUser?.destination || state.authDestination;
+  if (!destination) {
+    renderDriverFinanceError(tabName, "Войдите в аккаунт водителя.");
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/orders/history?role=driver&destination=${encodeURIComponent(destination)}`);
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Не удалось загрузить данные.");
+    const orders = data.orders || [];
+    if (tabName === "wallet") {
+      renderDriverWallet(orders);
+    } else {
+      renderDriverStats(orders);
+    }
+  } catch (error) {
+    renderDriverFinanceError(tabName, error.message || "Данные временно недоступны.");
+  }
 }
 
 function renderDriverCommunityChat() {
@@ -3024,6 +3142,8 @@ function showDriverContent(tabName) {
   }
   clearInterval(driverOrdersTimer);
   clearInterval(driverAcceptedTimer);
+  clearInterval(driverFinanceTimer);
+  driverFinanceTimer = null;
   $(".workspace").classList.remove("driver-order-view", "view-addresses");
   $("#driverPanel").classList.remove("order-detail-mode");
   $(".content-grid").classList.add("section-mode");
@@ -3039,6 +3159,9 @@ function showDriverContent(tabName) {
   if (tabName === "feed") {
     loadDriverOrders();
     driverOrdersTimer = window.setInterval(loadDriverOrders, 5000);
+  } else if (tabName === "stats" || tabName === "wallet") {
+    loadDriverFinance(tabName);
+    driverFinanceTimer = window.setInterval(() => loadDriverFinance(tabName), 5000);
   }
 }
 
@@ -3683,6 +3806,7 @@ function updateMenuForRole() {
   const driverChatItem = $('.menu-item[data-section="driverChat"]');
   const profileCard = $(".profile-card");
 
+  $(".workspace")?.classList.toggle("driver-mode", state.driverMode);
   rideItem.textContent = state.driverMode ? "Лента" : "Поездка";
   historyItem.textContent = state.driverMode ? "История поездок" : "История заказов";
   addressesItem.classList.toggle("is-hidden", state.driverMode);
