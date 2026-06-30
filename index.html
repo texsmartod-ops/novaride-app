@@ -12,7 +12,7 @@
     <link rel="icon" href="/assets/novadrive-icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
     <link href="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.css" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css?v=20260630-007" />
+    <link rel="stylesheet" href="/styles.css?v=20260630-008" />
   </head>
   <body>
     <main class="app-shell">
@@ -290,9 +290,12 @@
               </div>
 
               <div class="price-glass client-price-card">
-                <label for="clientPriceInput">
+                <label class="client-price-label" for="clientPriceInput">
                   <span>Ваша цена за поездку</span>
-                  <strong><input id="clientPriceInput" type="number" min="1" step="1" value="150" inputmode="numeric" aria-label="Цена клиента в гривнах" /> грн</strong>
+                  <div class="client-price-control">
+                    <input id="clientPriceInput" type="number" min="1" step="1" value="150" inputmode="numeric" aria-label="Цена клиента в гривнах" />
+                    <strong>грн</strong>
+                  </div>
                   <em id="distanceLabel">Маршрут: ~10 км</em>
                 </label>
               </div>
