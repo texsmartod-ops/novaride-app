@@ -3592,7 +3592,7 @@ async function createRideOrder() {
   const button = $("#orderBtn");
   const from = $("#fromInput").value.trim();
   const to = $("#toInput").value.trim();
-  const selectedClass = $(".class-card.is-selected")?.dataset.className || "Эконом";
+  const selectedClass = $(".class-card.is-selected")?.dataset.className || "Comfort";
 
   if (!from || !to) {
     alert("Выберите адрес точки A и точки B.");

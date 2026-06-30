@@ -12,7 +12,7 @@
     <link rel="icon" href="/assets/novadrive-icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png" />
     <link href="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.css" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css?v=20260630-002" />
+    <link rel="stylesheet" href="/styles.css?v=20260630-003" />
   </head>
   <body>
     <main class="app-shell">
@@ -224,21 +224,21 @@
                 </button>
                 <div class="map-class-strip" id="classGrid">
                   <button class="class-panel-handle" id="classPanelHandle" type="button" aria-label="Скрыть классы"></button>
-                  <button class="class-card is-selected" data-price="150" data-class-name="Эконом">
-                    <span class="vehicle-icon standard-car" aria-hidden="true"><i></i></span>
-                    <strong>Эконом</strong>
+                  <button class="class-card is-selected" data-price="150" data-class-name="Comfort">
+                    <img class="tariff-icon" src="/assets/tariff-comfort.png" alt="" />
+                    <strong>Comfort</strong>
                   </button>
-                  <button class="class-card" data-price="210" data-class-name="Комфорт">
-                    <span class="vehicle-icon comfort-car" aria-hidden="true"><i></i></span>
-                    <strong>Комфорт</strong>
+                  <button class="class-card" data-price="210" data-class-name="Car Seat">
+                    <img class="tariff-icon" src="/assets/tariff-car-seat.png" alt="" />
+                    <strong>Car Seat</strong>
                   </button>
-                  <button class="class-card" data-price="320" data-class-name="Бизнес">
-                    <span class="vehicle-icon business-car" aria-hidden="true"><i></i></span>
-                    <strong>Бизнес</strong>
+                  <button class="class-card" data-price="320" data-class-name="Business">
+                    <img class="tariff-icon" src="/assets/tariff-business.png" alt="" />
+                    <strong>Business</strong>
                   </button>
-                  <button class="class-card" data-price="430" data-class-name="Plus">
-                    <span class="vehicle-icon plus-car" aria-hidden="true"><i></i></span>
-                    <strong>Plus</strong>
+                  <button class="class-card" data-price="430" data-class-name="Minibus">
+                    <img class="tariff-icon" src="/assets/tariff-minibus.png" alt="" />
+                    <strong>Minibus</strong>
                   </button>
                 </div>
               </div>
@@ -346,7 +346,7 @@
     </section>
 
     <script src="https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.js"></script>
-    <script src="/app.js?v=20260630-001"></script>
+    <script src="/app.js?v=20260630-002"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {

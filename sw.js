@@ -1,13 +1,17 @@
-const CACHE_NAME = "novaride-shell-v31";
+const CACHE_NAME = "novaride-shell-v32";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
-  "/styles.css?v=20260630-002",
-  "/app.js?v=20260630-001",
+  "/styles.css?v=20260630-003",
+  "/app.js?v=20260630-002",
   "/assets/odessa-streets.json",
   "/manifest.webmanifest",
   "/assets/novadrive-logo.png",
   "/assets/location-picker.png",
+  "/assets/tariff-comfort.png",
+  "/assets/tariff-car-seat.png",
+  "/assets/tariff-business.png",
+  "/assets/tariff-minibus.png",
   "/assets/novadrive-icon-192.png",
   "/assets/novadrive-icon-512.png",
   "/assets/apple-touch-icon.png",
