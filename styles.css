@@ -2414,9 +2414,9 @@ body.dark .verification-step-header {
 
 .client-price-control {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-height: 58px;
   padding: 8px 12px 8px 14px;
   border: 1px solid rgba(29, 103, 255, 0.16);
@@ -2441,7 +2441,7 @@ body.dark .verification-step-header {
 }
 
 .price-glass input {
-  width: 100%;
+  width: min(150px, 42vw);
   min-width: 0;
   min-height: 44px;
   border: 0;
@@ -2450,7 +2450,7 @@ body.dark .verification-step-header {
   font: inherit;
   font-size: clamp(2rem, 6vw, 2.45rem);
   font-weight: 1000;
-  text-align: right;
+  text-align: left;
 }
 
 .price-glass input:focus {
