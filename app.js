@@ -918,6 +918,9 @@ function renderStopsList() {
               aria-label="Остановка ${label}"
               autocomplete="off"
             />
+            <button class="open-map-picker" type="button" data-map-point="stop-${index}" aria-label="Выбрать остановку ${label} на карте">
+              <img src="/assets/location-picker.png" alt="" />
+            </button>
             <div class="address-suggestions" data-suggestions="stop-${index}"></div>
           </div>
           <button class="remove-stop-btn" type="button" data-remove-stop="${index}" aria-label="Удалить остановку ${label}">×</button>
