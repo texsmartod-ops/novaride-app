@@ -2271,9 +2271,9 @@ body.dark .verification-step-header {
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 7px;
-  min-height: 100px;
-  padding: 9px 8px 12px;
+  gap: 9px;
+  min-height: 132px;
+  padding: 13px 10px 16px;
   border: 1px solid transparent;
   border-radius: 14px;
   background: transparent;
@@ -2297,7 +2297,7 @@ body.dark .verification-step-header {
 }
 
 .map-class-strip .class-card strong {
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   line-height: 1.1;
   letter-spacing: 0;
   white-space: nowrap;
@@ -2321,8 +2321,8 @@ body.dark .verification-step-header {
 
 .tariff-icon {
   display: block;
-  width: min(86px, 18vw);
-  height: 48px;
+  width: min(156px, 22vw);
+  height: 78px;
   object-fit: contain;
   filter: drop-shadow(0 12px 16px rgba(0, 0, 0, 0.24));
   transform: translateY(1px);
@@ -4642,13 +4642,13 @@ body.dark .companion-bubble {
   }
 
   .map-class-strip .class-card {
-    min-height: 78px;
-    padding-inline: 4px;
+    min-height: 92px;
+    padding: 8px 4px 10px;
   }
 
   .tariff-icon {
-    width: min(70px, 19vw);
-    height: 36px;
+    width: min(92px, 22vw);
+    height: 46px;
   }
 
   .map-class-strip .class-card strong {
