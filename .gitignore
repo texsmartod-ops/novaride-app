@@ -3,3 +3,12 @@ data/users.json
 data/orders.json
 data/auth-codes.json
 .tools/
+android-twa/android.keystore
+android-twa/*.jks
+android-twa/*.keystore
+android-twa/*.aab
+android-twa/*.apk
+android-twa/*.idsig
+android-twa/.gradle/
+android-twa/build/
+android-twa/app/build/

@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.novaride.app",
+      "sha256_cert_fingerprints": [
+        "E4:C4:3D:65:36:BD:B8:B8:42:6B:F4:37:63:06:E5:DF:34:20:EF:88:91:2A:2A:19:8C:6B:BE:3A:8C:FC:94:A5"
+      ]
+    }
+  }
+]
